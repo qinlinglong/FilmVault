@@ -22,8 +22,8 @@ object Constants {
 
     // 排序方式 (sort 参数)
     val SORT_OPTIONS = listOf(
-        "" to "更新时间",
-        "uptime" to "添加时间",
+        "" to "添加时间",
+        "uptime" to "更新时间",
         "date" to "上映时间",
         "score" to "评分最高",
         "number" to "评分人数",
