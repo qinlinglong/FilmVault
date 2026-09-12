@@ -297,6 +297,8 @@ class ApiClient(context: Context, private val siteSettings: SiteSettingsStore) {
         for (k in iArr.indices) {
             val id = iArr[k].jsonPrimitive.content
             val title = tArr?.getOrNull(k)?.jsonPrimitive?.content ?: ""
+            val itemDir = dArr?.getOrNull(k)?.jsonPrimitive?.content
+                ?.takeIf { it == "mv" || it == "tv" || it == "ac" } ?: dir
             val aItem = aArr?.getOrNull(k)?.jsonArray
             val year = aItem?.getOrNull(0)?.jsonPrimitive?.content?.toIntOrNull()
                 ?: yearArr?.getOrNull(k)?.jsonPrimitive?.content?.toIntOrNull()
@@ -310,7 +312,7 @@ class ApiClient(context: Context, private val siteSettings: SiteSettingsStore) {
             val status = gArr?.getOrNull(k)?.jsonPrimitive?.content
             result.add(
                 MovieItem(
-                    id = id, dir = dir, title = title, year = year,
+                    id = id, dir = itemDir, title = title, year = year,
                     rating = rating, imdb = imdb, quality = quality,
                     status = status, regionCode = regionCode, genreCodes = genreCodes
                 )
