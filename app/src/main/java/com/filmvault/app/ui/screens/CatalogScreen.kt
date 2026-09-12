@@ -32,6 +32,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.delay
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -63,6 +64,11 @@ fun CatalogScreen(nav: NavController, dir: String, label: String) {
     val languageOpts = Constants.LANGUAGE_OPTIONS.map { (v, l) -> FilterOption(l, v, "lang") }
 
     LaunchedEffect(Unit) { if (vm.items.isEmpty()) vm.refresh() }
+    LaunchedEffect(query) {
+        delay(450)
+        val normalized = query.trim()
+        if (vm.filters["q"].orEmpty() != normalized) vm.setFilter("q", normalized)
+    }
 
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
