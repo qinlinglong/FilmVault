@@ -10,6 +10,7 @@ object Constants {
     /** 不内置任何站点；首次使用需由用户在登录页填写模块化仓库地址。 */
     const val DEFAULT_BASE_URL = ""
     const val DEFAULT_IMG_BASE = "https://s.tutu.pm/img"
+    const val REPOSITORY_URL = "https://github.com/qinlinglong/FilmVault"
 
     // 分类目录 -> 接口 dir
     val CATEGORIES = listOf(
