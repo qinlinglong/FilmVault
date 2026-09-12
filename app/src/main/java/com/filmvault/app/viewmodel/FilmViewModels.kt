@@ -106,6 +106,10 @@ class CatalogViewModel(private val dir: String, private val isSearch: Boolean = 
             try {
                 val result = if (isSearch) {
                     repo.search(searchQuery.trim(), page, searchType, searchMode)
+                } else if (!filters["q"].isNullOrBlank()) {
+                    // 分类页的搜索框对应网页搜索接口；/res/{dir}?q= 在站点端会被忽略。
+                    val type = when (dir) { "mv" -> "1"; "tv" -> "2"; "ac" -> "3"; else -> "" }
+                    repo.search(filters["q"].orEmpty(), page, type, "1")
                 } else {
                     repo.getList(dir, page, filters.toMap())
                 }
