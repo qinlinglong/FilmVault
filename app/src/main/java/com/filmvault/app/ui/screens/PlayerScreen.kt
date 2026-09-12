@@ -1,17 +1,15 @@
 package com.filmvault.app.ui.screens
 
 import android.view.ViewGroup
+import android.view.MotionEvent
 import android.content.pm.ActivityInfo
 import android.media.AudioManager
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.foundation.layout.Row
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.LockOpen
@@ -107,7 +105,41 @@ fun PlayerScreen(nav: NavController, url: String) {
                     layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
                     this.player = player
                     useController = true
+                    controllerAutoShow = true
+                    controllerHideOnTouch = true
                     controllerShowTimeoutMs = 3500
+
+                    // 手势直接挂在 PlayerView 上，并返回 false，让普通点击继续交给
+                    // Media3 控制栏处理（播放/暂停、进度拖动、快进/快退等）。
+                    var startX = 0f
+                    var startY = 0f
+                    setOnTouchListener { playerView, event ->
+                        when (event.actionMasked) {
+                            MotionEvent.ACTION_DOWN -> {
+                                startX = event.x
+                                startY = event.y
+                            }
+                            MotionEvent.ACTION_UP -> {
+                                val deltaY = startY - event.y
+                                if (kotlin.math.abs(deltaY) >= 80f && kotlin.math.abs(deltaY) > kotlin.math.abs(startX - event.x) * 1.2f) {
+                                    if (startX < playerView.width / 2f) {
+                                        val window = activity?.window
+                                        val current = window?.attributes?.screenBrightness?.takeIf { it >= 0f } ?: 0.5f
+                                        val next = (current + deltaY / 900f).coerceIn(0.05f, 1f)
+                                        window?.let { it.attributes = it.attributes.apply { screenBrightness = next } }
+                                    } else {
+                                        val direction = if (deltaY > 0f) AudioManager.ADJUST_RAISE else AudioManager.ADJUST_LOWER
+                                        audioManager?.adjustStreamVolume(AudioManager.STREAM_MUSIC, direction, 0)
+                                    }
+                                }
+                            }
+                            MotionEvent.ACTION_CANCEL -> {
+                                startX = 0f
+                                startY = 0f
+                            }
+                        }
+                        false
+                    }
                 }
             },
         )
@@ -117,53 +149,6 @@ fun PlayerScreen(nav: NavController, url: String) {
             Box(
                 Modifier.fillMaxSize().pointerInput(Unit) { detectTapGestures { } },
             )
-        }
-        if (!locked) {
-            // 左半屏上下滑动调节亮度；右半屏上下滑动调节媒体音量。
-            Row(Modifier.fillMaxSize()) {
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxHeight()
-                        .pointerInput(Unit) {
-                        var accumulated = 0f
-                        detectVerticalDragGestures(
-                            onVerticalDrag = { _, dragAmount ->
-                                accumulated += -dragAmount
-                                if (kotlin.math.abs(accumulated) >= 24f) {
-                                    val window = activity?.window
-                                    val current = window?.attributes?.screenBrightness?.takeIf { it >= 0f } ?: 0.5f
-                                    val next = (current + accumulated / 900f).coerceIn(0.05f, 1f)
-                                    window?.let { it.attributes = it.attributes.apply { screenBrightness = next } }
-                                    accumulated = 0f
-                                }
-                            },
-                            onDragEnd = { accumulated = 0f },
-                            onDragCancel = { accumulated = 0f },
-                        )
-                        },
-                )
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxHeight()
-                        .pointerInput(Unit) {
-                        var accumulated = 0f
-                        detectVerticalDragGestures(
-                            onVerticalDrag = { _, dragAmount ->
-                                accumulated += -dragAmount
-                                if (kotlin.math.abs(accumulated) >= 35f) {
-                                    val direction = if (accumulated > 0f) AudioManager.ADJUST_RAISE else AudioManager.ADJUST_LOWER
-                                    audioManager?.adjustStreamVolume(AudioManager.STREAM_MUSIC, direction, 0)
-                                    accumulated = 0f
-                                }
-                            },
-                            onDragEnd = { accumulated = 0f },
-                            onDragCancel = { accumulated = 0f },
-                        )
-                        },
-                )
-            }
         }
         if (!locked) {
             if (tracks.groups.any { it.type == C.TRACK_TYPE_TEXT }) {
