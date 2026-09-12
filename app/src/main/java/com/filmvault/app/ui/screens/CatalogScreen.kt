@@ -89,6 +89,8 @@ fun CatalogScreen(nav: NavController, dir: String, label: String) {
                         Icon(Icons.Default.Search, contentDescription = "搜索")
                     }
                 },
+                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Search),
+                keyboardActions = androidx.compose.foundation.text.KeyboardActions(onSearch = { vm.setFilter("q", query.trim()) }),
                 modifier = Modifier.fillMaxWidth(),
             )
         }
