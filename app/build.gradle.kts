@@ -19,6 +19,7 @@ android {
     signingConfigs {
         create("release") {
             storeFile = file(System.getenv("FILMVAULT_KEYSTORE_PATH") ?: "../filmvault.keystore")
+            storeType = "PKCS12"
             storePassword = System.getenv("FILMVAULT_STORE_PASSWORD") ?: ""
             keyAlias = System.getenv("FILMVAULT_KEY_ALIAS") ?: "filmvault"
             keyPassword = System.getenv("FILMVAULT_KEY_PASSWORD") ?: ""
