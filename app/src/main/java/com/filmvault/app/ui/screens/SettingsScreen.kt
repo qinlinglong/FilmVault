@@ -31,6 +31,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import com.filmvault.app.util.hostOf
+import com.filmvault.app.util.Constants
 import com.filmvault.app.viewmodel.SettingsViewModel
 import com.filmvault.app.ui.components.MainBottomBar
 
@@ -122,6 +123,15 @@ fun SettingsScreen(nav: NavController) {
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
                     modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                )
+            }
+
+            item {
+                Text(
+                    "仓库地址：${Constants.REPOSITORY_URL}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
+                    modifier = Modifier.fillMaxWidth(),
                 )
             }
 

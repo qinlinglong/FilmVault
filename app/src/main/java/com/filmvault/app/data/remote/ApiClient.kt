@@ -483,7 +483,7 @@ class ApiClient(context: Context, private val siteSettings: SiteSettingsStore) {
             val item = playlist[k].jsonObject
             val pid = item["i"]?.jsonPrimitive?.content ?: return@mapNotNull null
             val name = item["t"]?.jsonPrimitive?.content ?: "线路${k + 1}"
-            val eps = (item["list"] as? JsonArray)?.map { it.jsonPrimitive.content } ?: emptyList()
+            val eps = parsePlaylistEpisodes(item["list"])
             PlayLine(id = pid, name = name, episodes = eps)
         }
 
@@ -512,6 +512,33 @@ class ApiClient(context: Context, private val siteSettings: SiteSettingsStore) {
 
         return Resources(magnets = magnets, clouds = clouds, playLines = playLines)
     }
+
+    /** 网页 playlist 既可能是字符串数组，也可能是 [[前后缀],[起止集数]] 的区间结构。 */
+    private fun parsePlaylistEpisodes(element: JsonElement?): List<String> {
+        val array = element as? JsonArray ?: return emptyList()
+        val result = mutableListOf<String>()
+        array.forEach { entry ->
+            val simple = entry.jsonPrimitiveOrNull()
+            if (simple != null) {
+                result += simple
+                return@forEach
+            }
+            val group = entry as? JsonArray ?: return@forEach
+            val labels = group.getOrNull(0) as? JsonArray
+            val range = group.getOrNull(1) as? JsonArray
+            val prefix = labels?.getOrNull(0)?.jsonPrimitive?.content ?: "第"
+            val suffix = labels?.getOrNull(1)?.jsonPrimitive?.content ?: "集"
+            val from = range?.getOrNull(0)?.jsonPrimitive?.content?.toIntOrNull()
+            val to = range?.getOrNull(1)?.jsonPrimitive?.content?.toIntOrNull()
+            if (from != null && to != null && to >= from) {
+                (from..to).forEach { result += "$prefix${it}$suffix" }
+            }
+        }
+        return result
+    }
+
+    private fun JsonElement.jsonPrimitiveOrNull(): String? =
+        (this as? kotlinx.serialization.json.JsonPrimitive)?.content
 
     /** 观看历史。 */
     suspend fun getHistory(): List<HistoryItem> = withContext(Dispatchers.IO) {
