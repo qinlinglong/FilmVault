@@ -46,9 +46,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
-import coil.compose.AsyncImage
 import com.filmvault.app.data.model.MagnetItem
 import com.filmvault.app.di.AppModule
+import com.filmvault.app.ui.components.PosterImage
 import com.filmvault.app.util.Playback
 import com.filmvault.app.viewmodel.DetailViewModel
 import kotlinx.coroutines.launch
@@ -90,8 +90,8 @@ fun DetailScreen(nav: NavController, dir: String, id: String) {
           Column(Modifier.verticalScroll(rememberScrollState()).padding(if (wide) 28.dp else 16.dp)) {
             // 头部：海报 + 信息
             Row(Modifier.fillMaxWidth()) {
-                AsyncImage(
-                    model = meta?.posterUrl ?: "/img/$dir/$id/256.webp",
+                PosterImage(
+                    url = meta?.posterUrl ?: "/img/$dir/$id/256.webp",
                     contentDescription = null,
                     modifier = Modifier.width(if (wide) 180.dp else 110.dp).height(if (wide) 260.dp else 160.dp).clip(RoundedCornerShape(10.dp)),
                     contentScale = ContentScale.Crop,
