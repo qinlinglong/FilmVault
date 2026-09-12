@@ -346,10 +346,9 @@ class ApiClient(context: Context, private val siteSettings: SiteSettingsStore) {
     suspend fun getDetailMeta(dir: String, id: String, fallbackTitle: String): DetailMeta =
         withContext(Dispatchers.IO) {
             ensureVerified()
-            val resp = executeWithVerification { client.newCall(
-                Request.Builder().url("${baseUrl}/$dir/$id").build()
-            ).execute() }
-            val html = resp.use { it.body?.string().orEmpty() }
+            val html = requestTextWithVerification {
+                client.newCall(Request.Builder().url("${baseUrl}/$dir/$id").build()).execute()
+            }
             parseDetailMeta(html, dir, id, fallbackTitle)
         }
 
@@ -425,20 +424,18 @@ class ApiClient(context: Context, private val siteSettings: SiteSettingsStore) {
     /** 获取播放/下载资源总览。 */
     suspend fun getResources(dir: String, id: String): Resources = withContext(Dispatchers.IO) {
         ensureVerified()
-        val resp = executeWithVerification { client.newCall(
-            Request.Builder().url("${baseUrl}/res/downurl/$dir/$id").build()
-        ).execute() }
-        val text = resp.use { it.body?.string().orEmpty() }
+        val text = requestTextWithVerification {
+            client.newCall(Request.Builder().url("${baseUrl}/res/downurl/$dir/$id").build()).execute()
+        }
         parseResources(text, dir, id)
     }
 
     /** 解析在线播放页中的真实 m3u8/mp4 直链，供 App 内播放器使用。 */
     suspend fun resolvePlayUrl(lineId: String, episode: Int): String? = withContext(Dispatchers.IO) {
         ensureVerified()
-        val resp = executeWithVerification { client.newCall(
-            Request.Builder().url("${baseUrl}/py/$lineId/$episode").build()
-        ).execute() }
-        val html = resp.use { it.body?.string().orEmpty() }
+        val html = requestTextWithVerification {
+            client.newCall(Request.Builder().url("${baseUrl}/py/$lineId/$episode").build()).execute()
+        }
         val playerObject = extractJsonObjectContaining(html, "\"url\"") ?: return@withContext null
         runCatching {
             json.parseToJsonElement(playerObject).jsonObject["url"]?.jsonPrimitive?.content
@@ -517,10 +514,9 @@ class ApiClient(context: Context, private val siteSettings: SiteSettingsStore) {
     /** 观看历史。 */
     suspend fun getHistory(): List<HistoryItem> = withContext(Dispatchers.IO) {
         ensureVerified()
-        val resp = executeWithVerification { client.newCall(
-            Request.Builder().url("${baseUrl}/res/historys").build()
-        ).execute() }
-        val text = resp.use { it.body?.string().orEmpty() }
+        val text = requestTextWithVerification {
+            client.newCall(Request.Builder().url("${baseUrl}/res/historys").build()).execute()
+        }
         parseHistory(text)
     }
 
