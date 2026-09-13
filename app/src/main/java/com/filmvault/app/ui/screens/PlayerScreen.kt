@@ -226,10 +226,10 @@ fun PlayerScreen(
         }
     }
 
-    // 菜单/弹层切换是华为横屏下最容易触发系统栏重新计算的时机，待弹层完成布局
-    // 后再次保持沉浸模式，避免底部面板出现一次性跳动。
+    // 仅在菜单打开后维护沉浸模式。菜单关闭时不要再次 hide 系统栏，否则华为设备
+    // 会在弹框消失的一瞬间重新计算窗口高度，造成底部面板上移后立即回弹。
     androidx.compose.runtime.LaunchedEffect(playlistExpanded, speedMenuExpanded, fullscreen) {
-        if (fullscreen) {
+        if (fullscreen && (playlistExpanded || speedMenuExpanded)) {
             delay(80)
             applyPlayerImmersiveMode(activity, view)
         }
