@@ -82,7 +82,7 @@ private fun HomeSection(title: String, dir: String, items: List<MovieItem>, isLo
         Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(title, style = MaterialTheme.typography.titleMedium)
             Spacer(Modifier.weight(1f))
-            TextButton(onClick = { nav.navigate("catalog/$dir?sort=uptime") }) { Text("更多 ❯") }
+            TextButton(onClick = { nav.navigate("catalog/$dir?sort=uptime&year=3") }) { Text("更多 ❯") }
         }
         if (isLoading && items.isEmpty()) {
             Box(Modifier.fillMaxWidth().padding(28.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() }

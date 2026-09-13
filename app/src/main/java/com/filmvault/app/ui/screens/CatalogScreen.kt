@@ -47,8 +47,10 @@ data class FilterOption(val label: String, val value: String, val param: String)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun CatalogScreen(nav: NavController, dir: String, label: String, defaultSort: String = "") {
-    val vm: CatalogViewModel = viewModel(key = "$dir-$defaultSort") { CatalogViewModel(dir, defaultSort = defaultSort) }
+fun CatalogScreen(nav: NavController, dir: String, label: String, defaultSort: String = "", defaultYear: String = "") {
+    val vm: CatalogViewModel = viewModel(key = "$dir-$defaultSort-$defaultYear") {
+        CatalogViewModel(dir, defaultSort = defaultSort, defaultYear = defaultYear)
+    }
     var query by remember { mutableStateOf("") }
     val gridState = rememberLazyGridState()
 

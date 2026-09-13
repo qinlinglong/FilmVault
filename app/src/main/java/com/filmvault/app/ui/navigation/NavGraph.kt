@@ -43,16 +43,18 @@ fun AppNavHost(startDestination: String = "auth") {
         composable("settings") { SettingsScreen(nav) }
         composable("about") { AboutScreen(nav) }
         composable(
-            route = "catalog/{dir}?sort={sort}",
+            route = "catalog/{dir}?sort={sort}&year={year}",
             arguments = listOf(
                 navArgument("dir") { type = NavType.StringType },
                 navArgument("sort") { type = NavType.StringType; defaultValue = "" },
+                navArgument("year") { type = NavType.StringType; defaultValue = "" },
             ),
         ) { back ->
             val dir = back.arguments?.getString("dir") ?: "mv"
             val sort = back.arguments?.getString("sort") ?: ""
+            val year = back.arguments?.getString("year") ?: ""
             val label = Constants.CATEGORIES.find { it.dir == dir }?.label ?: "列表"
-            CatalogScreen(nav, dir, label, sort)
+            CatalogScreen(nav, dir, label, sort, year)
         }
         composable(
             route = "detail/{dir}/{id}",

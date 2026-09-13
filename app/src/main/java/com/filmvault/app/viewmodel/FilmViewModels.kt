@@ -130,7 +130,12 @@ class HomeViewModel : ViewModel() {
 }
 
 /** 分类/搜索列表 */
-class CatalogViewModel(private val dir: String, private val isSearch: Boolean = false, defaultSort: String = "") : ViewModel() {
+class CatalogViewModel(
+    private val dir: String,
+    private val isSearch: Boolean = false,
+    defaultSort: String = "",
+    defaultYear: String = "",
+) : ViewModel() {
     var page by mutableStateOf(1)
     var totalPages by mutableStateOf(1)
     var items by mutableStateOf<List<MovieItem>>(emptyList())
@@ -143,6 +148,7 @@ class CatalogViewModel(private val dir: String, private val isSearch: Boolean = 
 
     init {
         if (defaultSort.isNotBlank()) filters["sort"] = defaultSort
+        if (defaultYear.isNotBlank()) filters["year"] = defaultYear
     }
 
     /** 搜索页不应在空关键词时自动请求第一页。 */
