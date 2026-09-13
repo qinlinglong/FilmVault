@@ -31,7 +31,6 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import com.filmvault.app.util.hostOf
-import com.filmvault.app.util.Constants
 import com.filmvault.app.viewmodel.SettingsViewModel
 import com.filmvault.app.ui.components.MainBottomBar
 
@@ -118,36 +117,18 @@ fun SettingsScreen(nav: NavController) {
             }
 
             item {
-                Text(
-                    "作者：qinlinglong",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
-                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-                )
-            }
-
-            item {
-                Text(
-                    "仓库地址：${Constants.REPOSITORY_URL}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f),
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            }
-
-            item {
                 Surface(
                     shape = MaterialTheme.shapes.medium,
                     color = MaterialTheme.colorScheme.surfaceVariant,
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.fillMaxWidth().clickable { nav.navigate("about") },
                 ) {
                     Column(Modifier.padding(14.dp)) {
-                        Text("免责声明", style = MaterialTheme.typography.titleSmall)
+                        Text("关于 FilmVault", style = MaterialTheme.typography.titleSmall)
                         Text(
-                            "本 App 是一个模块化影视仓库与信息聚合工具，不提供、存储、上传或分发任何影视资源。App 展示的影片信息、封面、播放线路及第三方链接均来自用户配置的站点或相关服务，版权归原权利人所有。用户应自行判断内容与链接的合法性，并承担使用第三方服务产生的全部责任。请勿将本 App 用于任何违反法律法规或侵犯他人权益的行为。",
+                            "查看版本、作者、仓库地址与免责声明",
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f),
-                            modifier = Modifier.padding(top = 8.dp),
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
+                            modifier = Modifier.padding(top = 4.dp),
                         )
                     }
                 }

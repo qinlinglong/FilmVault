@@ -19,6 +19,7 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.filmvault.app.di.AppModule
 import com.filmvault.app.ui.screens.CatalogScreen
+import com.filmvault.app.ui.screens.AboutScreen
 import com.filmvault.app.ui.screens.DetailScreen
 import com.filmvault.app.ui.screens.HomeScreen
 import com.filmvault.app.ui.screens.HotScreen
@@ -40,6 +41,7 @@ fun AppNavHost(startDestination: String = "auth") {
         composable("search") { SearchScreen(nav) }
         composable("library") { LibraryScreen(nav) }
         composable("settings") { SettingsScreen(nav) }
+        composable("about") { AboutScreen(nav) }
         composable(
             route = "catalog/{dir}",
             arguments = listOf(navArgument("dir") { type = NavType.StringType }),
