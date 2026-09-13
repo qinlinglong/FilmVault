@@ -26,6 +26,7 @@ import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.Brightness6
 import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material.icons.filled.Subtitles
+import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
@@ -194,8 +195,12 @@ fun PlayerScreen(nav: NavController, url: String) {
             )
         }
         if (!locked) {
+            // 统一放在进度条上方，避免操作按钮分散在屏幕四角造成误触。
             Row(
-                modifier = Modifier.align(Alignment.TopStart).padding(top = 20.dp, start = 12.dp),
+                modifier = Modifier.align(Alignment.BottomCenter)
+                    .padding(bottom = 56.dp)
+                    .background(Color.Black.copy(alpha = 0.55f), RoundedCornerShape(24.dp))
+                    .padding(horizontal = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 IconButton(onClick = { player.seekBack() }) {
@@ -211,43 +216,46 @@ fun PlayerScreen(nav: NavController, url: String) {
                 IconButton(onClick = { player.seekForward() }) {
                     Icon(Icons.Default.Forward10, contentDescription = "前进 10 秒", tint = Color.White)
                 }
-            }
-            if (tracks.groups.any { it.type == C.TRACK_TYPE_TEXT }) {
+                if (tracks.groups.any { it.type == C.TRACK_TYPE_TEXT }) {
+                    IconButton(
+                        onClick = { TrackSelectionDialogBuilder(context, "选择字幕", player, C.TRACK_TYPE_TEXT).build().show() },
+                    ) { Icon(Icons.Default.Subtitles, contentDescription = "字幕", tint = Color.White) }
+                }
+                if (tracks.groups.any { it.type == C.TRACK_TYPE_AUDIO }) {
+                    IconButton(
+                        onClick = { TrackSelectionDialogBuilder(context, "选择音轨", player, C.TRACK_TYPE_AUDIO).build().show() },
+                    ) { Icon(Icons.Default.MusicNote, contentDescription = "音轨", tint = Color.White) }
+                }
                 IconButton(
-                    onClick = { TrackSelectionDialogBuilder(context, "选择字幕", player, C.TRACK_TYPE_TEXT).build().show() },
-                    modifier = Modifier.align(Alignment.TopEnd).padding(top = 20.dp, end = 208.dp),
-                ) { Icon(Icons.Default.Subtitles, contentDescription = "字幕", tint = Color.White) }
-            }
-            if (tracks.groups.any { it.type == C.TRACK_TYPE_AUDIO }) {
+                    onClick = {
+                        fullscreen = !fullscreen
+                        activity?.requestedOrientation = if (fullscreen) ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE else ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+                        val controller = activity?.let { WindowCompat.getInsetsController(it.window, view) }
+                        if (fullscreen) controller?.hide(WindowInsetsCompat.Type.systemBars()) else controller?.show(WindowInsetsCompat.Type.systemBars())
+                    },
+                ) {
+                    Icon(if (fullscreen) Icons.Default.FullscreenExit else Icons.Default.Fullscreen, contentDescription = if (fullscreen) "退出全屏" else "全屏", tint = Color.White)
+                }
                 IconButton(
-                    onClick = { TrackSelectionDialogBuilder(context, "选择音轨", player, C.TRACK_TYPE_AUDIO).build().show() },
-                    modifier = Modifier.align(Alignment.TopEnd).padding(top = 20.dp, end = 160.dp),
-                ) { Icon(Icons.Default.MusicNote, contentDescription = "音轨", tint = Color.White) }
+                    onClick = {
+                        locked = !locked
+                        if (locked) playerView?.hideController() else playerView?.showController()
+                    },
+                ) {
+                    Icon(
+                        if (locked) Icons.Default.Lock else Icons.Default.LockOpen,
+                        contentDescription = if (locked) "已锁定，点击解锁" else "未锁定，点击锁定",
+                        tint = Color.White,
+                    )
+                }
             }
         }
-        if (!locked) IconButton(
-            onClick = {
-                fullscreen = !fullscreen
-                activity?.requestedOrientation = if (fullscreen) ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE else ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
-                val controller = activity?.let { WindowCompat.getInsetsController(it.window, view) }
-                if (fullscreen) controller?.hide(WindowInsetsCompat.Type.systemBars()) else controller?.show(WindowInsetsCompat.Type.systemBars())
-            },
-            modifier = Modifier.align(Alignment.TopEnd).padding(top = 20.dp, end = 64.dp),
-        ) {
-            Icon(if (fullscreen) Icons.Default.FullscreenExit else Icons.Default.Fullscreen, contentDescription = if (fullscreen) "退出全屏" else "全屏", tint = Color.White)
-        }
+        // 返回按钮固定在左上角，符合横屏播放器的常见布局，锁定时仍可退出播放器。
         IconButton(
-            onClick = {
-                locked = !locked
-                if (locked) playerView?.hideController() else playerView?.showController()
-            },
-            modifier = Modifier.align(Alignment.CenterEnd).padding(end = 12.dp),
+            onClick = { nav.popBackStack() },
+            modifier = Modifier.align(Alignment.TopStart).padding(top = 16.dp, start = 16.dp),
         ) {
-            Icon(
-                if (locked) Icons.Default.Lock else Icons.Default.LockOpen,
-                contentDescription = if (locked) "已锁定，点击解锁" else "未锁定，点击锁定",
-                tint = Color.White,
-            )
+            Icon(Icons.Default.ArrowBack, contentDescription = "返回", tint = Color.White)
         }
         gestureHint?.let { hint ->
             Row(
