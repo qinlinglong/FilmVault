@@ -117,6 +117,10 @@ fun PlayerScreen(
     val previousOrientation = remember {
         activity?.requestedOrientation ?: ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
     }
+    val previousSoftInputMode = remember {
+        activity?.window?.attributes?.softInputMode
+            ?: android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_UNSPECIFIED
+    }
     val player = remember {
         ExoPlayer.Builder(context).setTrackSelector(trackSelector).build().apply {
             setMediaItem(MediaItem.fromUri(url))
@@ -177,6 +181,10 @@ fun PlayerScreen(
         val controller = window?.let { WindowCompat.getInsetsController(it, view) }
         if (window != null) {
             WindowCompat.setDecorFitsSystemWindows(window, false)
+            // 华为横屏沉浸式下，adjustResize 会在点击工具栏时因导航栏 Insets
+            // 短暂变化而压缩窗口，导致底部控制面板向上跳动。播放器固定使用
+            // adjustNothing，退出时恢复 Activity 原本的输入模式。
+            window.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING)
             window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         }
         controller?.let {
@@ -190,6 +198,7 @@ fun PlayerScreen(
             activity?.requestedOrientation = previousOrientation
             window?.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
             if (window != null) {
+                window.setSoftInputMode(previousSoftInputMode)
                 WindowCompat.setDecorFitsSystemWindows(window, false)
                 window.statusBarColor = android.graphics.Color.TRANSPARENT
                 window.navigationBarColor = android.graphics.Color.TRANSPARENT
