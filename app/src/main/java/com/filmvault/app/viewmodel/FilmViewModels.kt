@@ -13,12 +13,16 @@ import com.filmvault.app.data.repository.FilmRepository
 import com.filmvault.app.di.AppModule
 import com.filmvault.app.util.FavEntry
 import com.filmvault.app.util.HomeCacheStore
+import com.filmvault.app.util.HotCacheStore
 import com.filmvault.app.util.hostOf
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.Job
 
@@ -71,7 +75,9 @@ class HomeViewModel : ViewModel() {
     var error by mutableStateOf<String?>(null)
 
     private val homeCache = HomeCacheStore(AppModule.appContext)
+    private val hotCache = HotCacheStore(AppModule.appContext)
     private var cachedHost: String = ""
+    private var prefetchedHost: String = ""
 
     fun restoreCache(siteUrl: String) {
         val host = hostOf(siteUrl)
@@ -80,6 +86,7 @@ class HomeViewModel : ViewModel() {
         // 切换仓库时不能继续显示上一个仓库的内容。
         sections = homeCache.read(host)
         error = null
+        prefetchHot(siteUrl)
     }
 
     fun load(siteUrl: String = AppModule.siteSettings.siteUrlNow) {
@@ -93,6 +100,7 @@ class HomeViewModel : ViewModel() {
                     // getHome 解析网页首页的原始 inlist 顺序；不要在客户端重新排序。
                     sections = fresh
                     homeCache.write(hostOf(siteUrl), fresh)
+                    prefetchHot(siteUrl)
                 } else if (sections.isEmpty()) {
                     error = "首页数据暂时不可用"
                 }
@@ -101,10 +109,28 @@ class HomeViewModel : ViewModel() {
             } finally { isLoading = false }
         }
     }
+
+    private fun prefetchHot(siteUrl: String) {
+        val host = hostOf(siteUrl)
+        if (host.isBlank() || host == prefetchedHost) return
+        prefetchedHost = host
+        viewModelScope.launch {
+            runCatching {
+                coroutineScope {
+                    listOf("mv", "tv", "ac").map { dir ->
+                        async {
+                            val items = withTimeoutOrNull(12_000) { repo.getHot(dir, "day") }.orEmpty()
+                            hotCache.write(host, dir, "day", items)
+                        }
+                    }.awaitAll()
+                }
+            }
+        }
+    }
 }
 
 /** 分类/搜索列表 */
-class CatalogViewModel(private val dir: String, private val isSearch: Boolean = false) : ViewModel() {
+class CatalogViewModel(private val dir: String, private val isSearch: Boolean = false, defaultSort: String = "") : ViewModel() {
     var page by mutableStateOf(1)
     var totalPages by mutableStateOf(1)
     var items by mutableStateOf<List<MovieItem>>(emptyList())
@@ -114,6 +140,10 @@ class CatalogViewModel(private val dir: String, private val isSearch: Boolean = 
     var searchType by mutableStateOf("")
     var searchMode by mutableStateOf("1")
     val filters = androidx.compose.runtime.mutableStateMapOf<String, String>()
+
+    init {
+        if (defaultSort.isNotBlank()) filters["sort"] = defaultSort
+    }
 
     /** 搜索页不应在空关键词时自动请求第一页。 */
     val isSearchMode: Boolean get() = isSearch
@@ -168,6 +198,17 @@ class HotViewModel(private val dir: String) : ViewModel() {
     var isLoading by mutableStateOf(false)
     var error by mutableStateOf<String?>(null)
     var period by mutableStateOf("day")
+    private val hotCache = HotCacheStore(AppModule.appContext)
+    private var cachedKey = ""
+
+    fun restoreCache(siteUrl: String) {
+        val host = hostOf(siteUrl)
+        val key = "$host/$dir/$period"
+        if (key == cachedKey) return
+        cachedKey = key
+        val cached = hotCache.read(host, dir, period)
+        if (cached.isNotEmpty()) items = cached
+    }
 
     fun load() {
         if (isLoading) return
@@ -182,6 +223,7 @@ class HotViewModel(private val dir: String) : ViewModel() {
                 items = hot.ifEmpty {
                     repo.getList(dir, 1, mapOf("sort" to "number")).first
                 }
+                hotCache.write(hostOf(AppModule.siteSettings.siteUrlNow), dir, period, items)
                 if (items.isEmpty()) error = "热门数据暂时不可用"
             } catch (e: Exception) {
                 error = "加载失败：${e.message}"

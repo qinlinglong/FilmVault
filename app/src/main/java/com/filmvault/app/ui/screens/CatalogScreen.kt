@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
@@ -46,9 +47,10 @@ data class FilterOption(val label: String, val value: String, val param: String)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun CatalogScreen(nav: NavController, dir: String, label: String) {
-    val vm: CatalogViewModel = viewModel(key = dir) { CatalogViewModel(dir) }
+fun CatalogScreen(nav: NavController, dir: String, label: String, defaultSort: String = "") {
+    val vm: CatalogViewModel = viewModel(key = "$dir-$defaultSort") { CatalogViewModel(dir, defaultSort = defaultSort) }
     var query by remember { mutableStateOf("") }
+    val gridState = rememberLazyGridState()
 
     val sortOpts = Constants.SORT_OPTIONS.map { (v, l) -> FilterOption(l, v, "sort") }
     val qualityOpts = Constants.QUALITY_OPTIONS.map { (v, l) -> FilterOption(l, v, "quality") }
@@ -121,6 +123,8 @@ fun CatalogScreen(nav: NavController, dir: String, label: String) {
                     items = vm.items,
                     onItemClick = { nav.navigate("detail/${it.dir}/${it.id}") },
                     modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp),
+                    state = gridState,
+                    onNearEnd = { vm.nextPage() },
                 )
                 if (vm.error != null) {
                     Text(vm.error!!, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(12.dp))
@@ -128,11 +132,9 @@ fun CatalogScreen(nav: NavController, dir: String, label: String) {
             }
         }
 
-        if (vm.page < vm.totalPages) {
-            Box(Modifier.fillMaxWidth().padding(12.dp), contentAlignment = Alignment.Center) {
-                OutlinedButton(onClick = { vm.nextPage() }, enabled = !vm.isLoading) {
-                    Text(if (vm.isLoading) "加载中…" else "加载更多")
-                }
+        if (vm.isLoading && vm.items.isNotEmpty()) {
+            Box(Modifier.fillMaxWidth().padding(8.dp), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator()
             }
         }
     }
@@ -142,7 +144,9 @@ fun CatalogScreen(nav: NavController, dir: String, label: String) {
 @Composable
 private fun FilterDropdown(label: String, options: List<FilterOption>, vm: CatalogViewModel) {
     var expanded by remember { mutableStateOf(false) }
-    var selected by remember { mutableStateOf(options[0]) }
+    var selected by remember {
+        mutableStateOf(options.find { it.value == vm.filters[options[0].param] } ?: options[0])
+    }
     ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = it }) {
         OutlinedButton(onClick = { expanded = true }, modifier = Modifier.menuAnchor(MenuAnchorType.PrimaryNotEditable)) {
             Text("${label}: ${selected.label}")

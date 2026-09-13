@@ -11,8 +11,12 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.snapshotFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -36,11 +40,22 @@ fun PosterGrid(
     items: List<MovieItem>,
     onItemClick: (MovieItem) -> Unit,
     modifier: Modifier = Modifier,
+    state: LazyGridState = androidx.compose.foundation.lazy.grid.rememberLazyGridState(),
+    onNearEnd: (() -> Unit)? = null,
 ) {
+    LaunchedEffect(state, items.size, onNearEnd) {
+        if (onNearEnd == null) return@LaunchedEffect
+        snapshotFlow { state.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1 }
+            .distinctUntilChanged()
+            .collect { lastIndex ->
+                if (lastIndex >= items.lastIndex - 4) onNearEnd()
+            }
+    }
     LazyVerticalGrid(
         columns = GridCells.Adaptive(minSize = 140.dp),
         horizontalArrangement = Arrangement.spacedBy(10.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
+        state = state,
         modifier = modifier.fillMaxWidth(),
     ) {
         items(items, key = { "${it.dir}/${it.id}" }) { item ->

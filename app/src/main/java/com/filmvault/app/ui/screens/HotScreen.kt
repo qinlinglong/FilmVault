@@ -25,6 +25,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -42,9 +43,12 @@ fun HotScreen(nav: NavController) {
     val periods = listOf("day" to "本日排行", "week" to "本周排行", "month" to "本月排行", "numbers" to "评分总数")
     var selected by remember { mutableStateOf("mv") }
     val vm: HotViewModel = viewModel(key = "hot-$selected") { HotViewModel(selected) }
+    val siteUrl by com.filmvault.app.di.AppModule.siteSettings.siteUrlFlow.collectAsState(initial = com.filmvault.app.di.AppModule.siteSettings.siteUrlNow)
 
-    LaunchedEffect(selected) {
-        if (vm.items.isEmpty()) vm.load()
+    LaunchedEffect(selected, siteUrl) {
+        vm.restoreCache(siteUrl)
+        // 缓存先展示，后台继续请求网页最新排行。
+        vm.load()
     }
 
     Column(Modifier.fillMaxSize()) {

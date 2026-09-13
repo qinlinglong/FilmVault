@@ -33,7 +33,7 @@ class FavoritesStore(private val context: Context) {
 
     suspend fun add(entry: FavEntry) {
         context.dataStore.edit { prefs ->
-            val list = current()
+            val list = prefs[KEY]?.let { json.decodeFromString<List<FavEntry>>(it) } ?: emptyList()
             if (list.none { it.id == entry.id && it.dir == entry.dir }) {
                 prefs[KEY] = json.encodeToString(list + entry)
             }
@@ -42,7 +42,9 @@ class FavoritesStore(private val context: Context) {
 
     suspend fun remove(id: String, dir: String) {
         context.dataStore.edit { prefs ->
-            val list = current().filterNot { it.id == id && it.dir == dir }
+            val list = prefs[KEY]?.let { json.decodeFromString<List<FavEntry>>(it) }
+                ?.filterNot { it.id == id && it.dir == dir }
+                ?: emptyList()
             prefs[KEY] = json.encodeToString(list)
         }
     }
