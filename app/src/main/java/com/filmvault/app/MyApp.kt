@@ -7,8 +7,6 @@ import coil.disk.DiskCache
 import coil.memory.MemoryCache
 import okhttp3.Dispatcher
 import okhttp3.OkHttpClient
-import okhttp3.ConnectionSpec
-import okhttp3.TlsVersion
 import com.filmvault.app.di.AppModule
 
 class MyApp : Application(), ImageLoaderFactory {
@@ -27,11 +25,6 @@ class MyApp : Application(), ImageLoaderFactory {
         }
         .okHttpClient {
             OkHttpClient.Builder()
-                .connectionSpecs(listOf(
-                    ConnectionSpec.Builder(ConnectionSpec.MODERN_TLS)
-                        .tlsVersions(TlsVersion.TLS_1_2)
-                        .build(),
-                ))
                 .addInterceptor { chain ->
                     chain.proceed(
                         chain.request().newBuilder()
