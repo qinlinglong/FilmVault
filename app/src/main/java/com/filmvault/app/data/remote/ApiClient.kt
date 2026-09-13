@@ -323,6 +323,19 @@ class ApiClient(context: Context, private val siteSettings: SiteSettingsStore) {
     }
 
     private fun parseHotHtml(html: String, dir: String): List<MovieItem> {
+        // 热门页优先复用网页内嵌的列存数据，保证排序和网页端一致。
+        Regex("(?:(?:_obj|window)\\.)?inlist\\s*=\\s*").findAll(html).forEach { marker ->
+            val objectStart = html.indexOf('{', marker.range.last + 1)
+            if (objectStart >= 0) {
+                val objectText = extractBalancedJsonObject(html, objectStart)
+                val inlist = runCatching { json.parseToJsonElement(objectText).jsonObject }.getOrNull()
+                if (inlist != null) {
+                    val parsed = parseInlist(inlist, dir)
+                    if (parsed.isNotEmpty()) return parsed
+                }
+            }
+        }
+
         val result = mutableListOf<MovieItem>()
         val cardPattern = Regex(
             """<a href="/$dir/([^"]+)"[^>]*title="([^"]+)".*?<div class="tag">(.*?)</div>""",
@@ -336,6 +349,30 @@ class ApiClient(context: Context, private val siteSettings: SiteSettingsStore) {
             result += MovieItem(id = id, dir = dir, title = title, year = year)
         }
         return result.distinctBy { "${it.dir}/${it.id}" }
+    }
+
+    private fun extractBalancedJsonObject(text: String, start: Int): String {
+        var depth = 0
+        var inString = false
+        var escaped = false
+        for (index in start until text.length) {
+            val c = text[index]
+            if (inString) {
+                if (escaped) escaped = false
+                else if (c == '\\') escaped = true
+                else if (c == '"') inString = false
+                continue
+            }
+            when (c) {
+                '"' -> inString = true
+                '{' -> depth++
+                '}' -> {
+                    depth--
+                    if (depth == 0) return text.substring(start, index + 1)
+                }
+            }
+        }
+        return ""
     }
 
     private fun decodeHtml(value: String): String = value

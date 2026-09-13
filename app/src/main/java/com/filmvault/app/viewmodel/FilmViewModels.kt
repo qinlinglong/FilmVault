@@ -217,12 +217,12 @@ class HotViewModel(private val dir: String) : ViewModel() {
             error = null
             try {
                 // 热门 HTML 页面可能触发站点二次安全验证，不能让页面无限转圈。
-                // 超时后立即使用同目录的接口排行作为可用降级数据。
                 val hot = withTimeoutOrNull(12_000) { repo.getHot(dir, period) }.orEmpty()
-                // 热门页是网页独立接口；部分站点节点不开放 HTML 时，用普通排行接口保证页面仍可用。
-                items = hot.ifEmpty {
+                // 只有“评分总数”与普通 number 排序语义一致；其它时间范围不能
+                // 用评分列表冒充，否则本周/本月点击后会看起来完全没有生效。
+                items = if (hot.isNotEmpty()) hot else if (period == "numbers") {
                     repo.getList(dir, 1, mapOf("sort" to "number")).first
-                }
+                } else emptyList()
                 hotCache.write(hostOf(AppModule.siteSettings.siteUrlNow), dir, period, items)
                 if (items.isEmpty()) error = "热门数据暂时不可用"
             } catch (e: Exception) {
@@ -234,7 +234,12 @@ class HotViewModel(private val dir: String) : ViewModel() {
     }
 
     fun updatePeriod(value: String) {
+        if (value == period) return
         period = value
+        // 切换时间范围时先读取该范围自己的缓存，不能继续显示上一个范围的排行。
+        val host = hostOf(AppModule.siteSettings.siteUrlNow)
+        items = hotCache.read(host, dir, value)
+        error = null
         load()
     }
 }
