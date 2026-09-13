@@ -9,13 +9,18 @@ import android.media.AudioManager
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.LockOpen
@@ -31,8 +36,6 @@ import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material.icons.filled.Subtitles
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.PlaylistPlay
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Slider
@@ -226,15 +229,6 @@ fun PlayerScreen(
         }
     }
 
-    // 仅在菜单打开后维护沉浸模式。菜单关闭时不要再次 hide 系统栏，否则华为设备
-    // 会在弹框消失的一瞬间重新计算窗口高度，造成底部面板上移后立即回弹。
-    androidx.compose.runtime.LaunchedEffect(playlistExpanded, speedMenuExpanded, fullscreen) {
-        if (fullscreen && (playlistExpanded || speedMenuExpanded)) {
-            delay(80)
-            applyPlayerImmersiveMode(activity, view)
-        }
-    }
-
     fun exitPlayer() {
         if (exiting) return
         exiting = true
@@ -378,48 +372,25 @@ fun PlayerScreen(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         if (episodeTotal > 1 && lineId.isNotBlank()) {
                             Box {
-                                IconButton(onClick = { playlistExpanded = true }) {
+                                IconButton(onClick = {
+                                    playlistExpanded = true
+                                    speedMenuExpanded = false
+                                }) {
                                     Icon(
                                         Icons.Default.PlaylistPlay,
                                         contentDescription = if (lineName.isBlank()) "播放清单" else "播放清单：$lineName",
                                         tint = Color.White,
                                     )
                                 }
-                                DropdownMenu(
-                                    expanded = playlistExpanded,
-                                    onDismissRequest = { playlistExpanded = false },
-                                ) {
-                                    (1..episodeTotal).forEach { episode ->
-                                        DropdownMenuItem(
-                                            text = { Text(if (episode == currentEpisode) "第${episode}集（播放中）" else "第${episode}集") },
-                                            onClick = {
-                                                playlistExpanded = false
-                                                if (episode != currentEpisode) switchEpisode(episode)
-                                            },
-                                        )
-                                    }
-                                }
                             }
                         }
                     // 倍速与其它播放器操作保持在同一个底部控制面板内。
                     Box {
-                        IconButton(onClick = { speedMenuExpanded = true }) {
+                        IconButton(onClick = {
+                            speedMenuExpanded = true
+                            playlistExpanded = false
+                        }) {
                             Text("${playbackSpeed}x", color = Color.White)
-                        }
-                        DropdownMenu(
-                            expanded = speedMenuExpanded,
-                            onDismissRequest = { speedMenuExpanded = false },
-                        ) {
-                            listOf(0.5f, 0.75f, 1f, 1.25f, 1.5f, 2f).forEach { speed ->
-                                DropdownMenuItem(
-                                    text = { Text("${speed}x${if (speed == playbackSpeed) "（当前）" else ""}") },
-                                    onClick = {
-                                        playbackSpeed = speed
-                                        player.setPlaybackSpeed(speed)
-                                        speedMenuExpanded = false
-                                    },
-                                )
-                            }
                         }
                     }
                     // 只有存在多个视频轨道/分辨率时显示清晰度入口，单一画质资源不显示
@@ -453,6 +424,52 @@ fun PlayerScreen(
                         ) {
                             Icon(if (fullscreen) Icons.Default.FullscreenExit else Icons.Default.Fullscreen, contentDescription = if (fullscreen) "退出全屏" else "全屏", tint = Color.White)
                         }
+                    }
+                }
+            }
+        }
+        // 菜单直接绘制在播放器窗口内，不使用独立 Popup，避免华为设备关闭弹框时
+        // 重新派发系统栏 Insets 导致底部控制面板抖动。
+        if (!locked && controlsVisible && (playlistExpanded || speedMenuExpanded)) {
+            Box(
+                modifier = Modifier.fillMaxSize().pointerInput(playlistExpanded, speedMenuExpanded) {
+                    detectTapGestures {
+                        playlistExpanded = false
+                        speedMenuExpanded = false
+                    }
+                },
+            )
+            Column(
+                modifier = Modifier.align(Alignment.BottomEnd)
+                    .padding(end = 16.dp, bottom = 128.dp)
+                    .widthIn(min = 160.dp, max = 280.dp)
+                    .heightIn(max = 420.dp)
+                    .verticalScroll(rememberScrollState())
+                    .background(Color.Black.copy(alpha = 0.92f), RoundedCornerShape(12.dp))
+                    .padding(vertical = 4.dp),
+            ) {
+                if (playlistExpanded) {
+                    (1..episodeTotal).forEach { episode ->
+                        Text(
+                            text = if (episode == currentEpisode) "第${episode}集（播放中）" else "第${episode}集",
+                            color = Color.White,
+                            modifier = Modifier.fillMaxWidth().clickable {
+                                playlistExpanded = false
+                                if (episode != currentEpisode) switchEpisode(episode)
+                            }.padding(horizontal = 18.dp, vertical = 12.dp),
+                        )
+                    }
+                } else {
+                    listOf(0.5f, 0.75f, 1f, 1.25f, 1.5f, 2f).forEach { speed ->
+                        Text(
+                            text = "${speed}x${if (speed == playbackSpeed) "（当前）" else ""}",
+                            color = Color.White,
+                            modifier = Modifier.fillMaxWidth().clickable {
+                                playbackSpeed = speed
+                                player.setPlaybackSpeed(speed)
+                                speedMenuExpanded = false
+                            }.padding(horizontal = 18.dp, vertical = 12.dp),
+                        )
                     }
                 }
             }
