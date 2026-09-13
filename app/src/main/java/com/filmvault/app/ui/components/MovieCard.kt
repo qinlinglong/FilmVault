@@ -24,13 +24,11 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.painter.ColorPainter
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.Alignment
 import coil.compose.AsyncImage
-import coil.request.ImageRequest
 import com.filmvault.app.data.model.MovieItem
 
 @Composable
@@ -114,7 +112,7 @@ fun MovieCard(item: MovieItem, modifier: Modifier = Modifier, onClick: () -> Uni
     }
 }
 
-/** 使用海报原图尺寸请求（256px），避免在列表中解码不必要的大图。 */
+/** 使用站点原始海报地址，交给 Coil 默认请求链路处理缓存与 TLS 协商。 */
 @Composable
 fun PosterImage(
     url: String,
@@ -122,18 +120,8 @@ fun PosterImage(
     modifier: Modifier = Modifier,
     contentScale: ContentScale = ContentScale.Crop,
 ) {
-    val context = LocalContext.current
-    val request = androidx.compose.runtime.remember(url) {
-        ImageRequest.Builder(context)
-            .data(url)
-            .size(256)
-            .allowRgb565(true)
-            .memoryCacheKey(url)
-            .diskCacheKey(url)
-            .build()
-    }
     AsyncImage(
-        model = request,
+        model = url,
         contentDescription = contentDescription,
         modifier = modifier.background(MaterialTheme.colorScheme.surfaceVariant),
         contentScale = contentScale,

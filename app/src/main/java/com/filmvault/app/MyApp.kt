@@ -5,8 +5,6 @@ import coil.ImageLoader
 import coil.ImageLoaderFactory
 import coil.disk.DiskCache
 import coil.memory.MemoryCache
-import okhttp3.Dispatcher
-import okhttp3.OkHttpClient
 import com.filmvault.app.di.AppModule
 
 class MyApp : Application(), ImageLoaderFactory {
@@ -21,23 +19,6 @@ class MyApp : Application(), ImageLoaderFactory {
             DiskCache.Builder()
                 .directory(cacheDir.resolve("filmvault_images"))
                 .maxSizeBytes(128L * 1024L * 1024L)
-                .build()
-        }
-        .okHttpClient {
-            OkHttpClient.Builder()
-                .addInterceptor { chain ->
-                    chain.proceed(
-                        chain.request().newBuilder()
-                            .header("User-Agent", "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/120 Mobile Safari/537.36")
-                            .header("Accept", "image/avif,image/webp,image/apng,image/*,*/*;q=0.8")
-                            .build(),
-                    )
-                }
-                .dispatcher(Dispatcher().apply {
-                    // 海报来自同一个 CDN；提高同域并发，避免首页多行海报排队。
-                    maxRequests = 24
-                    maxRequestsPerHost = 12
-                })
                 .build()
         }
         .crossfade(false)
