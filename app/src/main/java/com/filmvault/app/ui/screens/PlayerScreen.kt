@@ -71,6 +71,7 @@ fun PlayerScreen(nav: NavController, url: String) {
     var fullscreen by remember { mutableStateOf(true) }
     var isPlaying by remember { mutableStateOf(true) }
     var gestureHint by remember { mutableStateOf<String?>(null) }
+    var playerView by remember { mutableStateOf<PlayerView?>(null) }
     val gestureScope = rememberCoroutineScope()
     val activity = context as? android.app.Activity
     val audioManager = remember { context.getSystemService(AudioManager::class.java) }
@@ -120,11 +121,14 @@ fun PlayerScreen(nav: NavController, url: String) {
             modifier = Modifier.fillMaxSize(),
             factory = { ctx ->
                 PlayerView(ctx).apply {
+                    playerView = this
                     layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
                     this.player = player
                     useController = true
                     controllerAutoShow = true
-                    controllerHideOnTouch = true
+                    // 普通点击由下面的触摸监听显式切换，避免 Media3 的自动超时造成
+                    // “先消失、又回弹、再消失”的延迟体验。
+                    controllerHideOnTouch = false
                     controllerShowTimeoutMs = 3500
 
                     // 手势直接挂在 PlayerView 上，并返回 false，让普通点击继续交给
@@ -159,8 +163,15 @@ fun PlayerScreen(nav: NavController, url: String) {
                                         delay(900)
                                         gestureHint = null
                                     }
-                                } else {
-                                    playerView.performClick()
+                                } else if (!locked) {
+                                    // 点击视频区域时立即在显示/隐藏之间切换控制栏。
+                                    // 不再交给 PlayerView 的默认自动显示逻辑处理。
+                                    val mediaPlayerView = playerView as PlayerView
+                                    if (mediaPlayerView.isControllerFullyVisible) {
+                                        mediaPlayerView.hideController()
+                                    } else {
+                                        mediaPlayerView.showController()
+                                    }
                                 }
                             }
                             MotionEvent.ACTION_CANCEL -> {
@@ -168,7 +179,9 @@ fun PlayerScreen(nav: NavController, url: String) {
                                 startY = 0f
                             }
                         }
-                        false
+                        // 背景点击/手势由本监听器消费，防止 PlayerView 再执行一次默认
+                        // 的 controller 自动显示逻辑；控制栏子控件仍可正常接收自己的触摸。
+                        true
                     }
                 }
             },
@@ -224,8 +237,11 @@ fun PlayerScreen(nav: NavController, url: String) {
             Icon(if (fullscreen) Icons.Default.FullscreenExit else Icons.Default.Fullscreen, contentDescription = if (fullscreen) "退出全屏" else "全屏", tint = Color.White)
         }
         IconButton(
-            onClick = { locked = !locked },
-            modifier = Modifier.align(Alignment.TopEnd).padding(top = 20.dp, end = 16.dp),
+            onClick = {
+                locked = !locked
+                if (locked) playerView?.hideController() else playerView?.showController()
+            },
+            modifier = Modifier.align(Alignment.CenterEnd).padding(end = 12.dp),
         ) {
             Icon(
                 if (locked) Icons.Default.Lock else Icons.Default.LockOpen,
