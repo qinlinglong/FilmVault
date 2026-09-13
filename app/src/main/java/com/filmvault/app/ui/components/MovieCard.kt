@@ -32,7 +32,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.LocalContext
+import coil.imageLoader
 import coil.compose.AsyncImage
+import coil.request.ImageRequest
 import com.filmvault.app.data.model.MovieItem
 
 @Composable
@@ -43,6 +46,7 @@ fun PosterGrid(
     state: LazyGridState = androidx.compose.foundation.lazy.grid.rememberLazyGridState(),
     onNearEnd: (() -> Unit)? = null,
 ) {
+    PosterPrefetch(items)
     LaunchedEffect(state, items.size, onNearEnd) {
         if (onNearEnd == null) return@LaunchedEffect
         snapshotFlow { state.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1 }
@@ -60,6 +64,28 @@ fun PosterGrid(
     ) {
         items(items, key = { "${it.dir}/${it.id}" }) { item ->
             MovieCard(item = item, modifier = Modifier.fillMaxWidth(), onClick = { onItemClick(item) })
+        }
+    }
+}
+
+/**
+ * Lazy 网格/横向列表只会组合当前可见卡片，导致海报逐张进入组合树后才开始请求。
+ * 列表数据到达后提前把海报交给 Coil 队列，滚动到卡片时直接从缓存读取，减少逐张出现。
+ */
+@Composable
+fun PosterPrefetch(items: List<MovieItem>) {
+    val context = LocalContext.current
+    val urls = items.map { it.posterUrl }.distinct()
+    LaunchedEffect(urls) {
+        urls.forEach { url ->
+            context.imageLoader.enqueue(
+                ImageRequest.Builder(context)
+                    .data(url)
+                    .size(256)
+                    .memoryCacheKey(url)
+                    .diskCacheKey(url)
+                    .build(),
+            )
         }
     }
 }

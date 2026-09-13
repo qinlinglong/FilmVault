@@ -36,6 +36,7 @@ import com.filmvault.app.data.model.MovieItem
 import com.filmvault.app.di.AppModule
 import com.filmvault.app.ui.components.MainBottomBar
 import com.filmvault.app.ui.components.MovieCard
+import com.filmvault.app.ui.components.PosterPrefetch
 import com.filmvault.app.viewmodel.HomeViewModel
 
 /** 与网页首页一致：分别展示最近更新的电影、剧集和动漫。 */
@@ -91,6 +92,7 @@ private fun HomeSection(title: String, dir: String, items: List<MovieItem>, isLo
                 TextButton(onClick = onRetry) { Text("重试") }
             }
         } else {
+            PosterPrefetch(items.take(12))
             LazyRow(Modifier.fillMaxWidth().padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 items(items.take(12), key = { "${it.dir}/${it.id}" }) { item ->
                     MovieCard(item, Modifier.width(110.dp)) { nav.navigate("detail/${item.dir}/${item.id}") }
