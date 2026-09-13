@@ -10,6 +10,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
@@ -18,9 +19,16 @@ import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.FullscreenExit
 import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.Replay10
+import androidx.compose.material.icons.filled.Forward10
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.Brightness6
+import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material.icons.filled.Subtitles
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.Text
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -35,9 +43,13 @@ import androidx.core.view.WindowInsetsControllerCompat
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.foundation.shape.RoundedCornerShape
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Tracks
@@ -57,6 +69,9 @@ fun PlayerScreen(nav: NavController, url: String) {
     val view = LocalView.current
     var locked by remember { mutableStateOf(false) }
     var fullscreen by remember { mutableStateOf(true) }
+    var isPlaying by remember { mutableStateOf(true) }
+    var gestureHint by remember { mutableStateOf<String?>(null) }
+    val gestureScope = rememberCoroutineScope()
     val activity = context as? android.app.Activity
     val audioManager = remember { context.getSystemService(AudioManager::class.java) }
     val trackSelector = remember { DefaultTrackSelector(context) }
@@ -72,6 +87,7 @@ fun PlayerScreen(nav: NavController, url: String) {
     DisposableEffect(player) {
         val listener = object : androidx.media3.common.Player.Listener {
             override fun onTracksChanged(value: Tracks) { tracks = value }
+            override fun onIsPlayingChanged(value: Boolean) { isPlaying = value }
         }
         player.addListener(listener)
         onDispose { player.removeListener(listener) }
@@ -131,9 +147,17 @@ fun PlayerScreen(nav: NavController, url: String) {
                                         val current = window?.attributes?.screenBrightness?.takeIf { it >= 0f } ?: 0.5f
                                         val next = (current + deltaY / 900f).coerceIn(0.05f, 1f)
                                         window?.let { it.attributes = it.attributes.apply { screenBrightness = next } }
+                                        gestureHint = "亮度 ${(next * 100).toInt()}%"
                                     } else {
-                                        val direction = if (deltaY > 0f) AudioManager.ADJUST_RAISE else AudioManager.ADJUST_LOWER
-                                        audioManager?.adjustStreamVolume(AudioManager.STREAM_MUSIC, direction, 0)
+                                        val max = audioManager?.getStreamMaxVolume(AudioManager.STREAM_MUSIC) ?: 15
+                                        val current = audioManager?.getStreamVolume(AudioManager.STREAM_MUSIC) ?: 0
+                                        val next = (current + deltaY / 900f * max).toInt().coerceIn(0, max)
+                                        audioManager?.setStreamVolume(AudioManager.STREAM_MUSIC, next, 0)
+                                        gestureHint = "音量 ${(next * 100 / max.coerceAtLeast(1))}%"
+                                    }
+                                    gestureScope.launch {
+                                        delay(900)
+                                        gestureHint = null
                                     }
                                 } else {
                                     playerView.performClick()
@@ -157,6 +181,24 @@ fun PlayerScreen(nav: NavController, url: String) {
             )
         }
         if (!locked) {
+            Row(
+                modifier = Modifier.align(Alignment.TopStart).padding(top = 20.dp, start = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                IconButton(onClick = { player.seekBack() }) {
+                    Icon(Icons.Default.Replay10, contentDescription = "后退 10 秒", tint = Color.White)
+                }
+                IconButton(onClick = { if (player.isPlaying) player.pause() else player.play() }) {
+                    Icon(
+                        if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                        contentDescription = if (isPlaying) "暂停" else "播放",
+                        tint = Color.White,
+                    )
+                }
+                IconButton(onClick = { player.seekForward() }) {
+                    Icon(Icons.Default.Forward10, contentDescription = "前进 10 秒", tint = Color.White)
+                }
+            }
             if (tracks.groups.any { it.type == C.TRACK_TYPE_TEXT }) {
                 IconButton(
                     onClick = { TrackSelectionDialogBuilder(context, "选择字幕", player, C.TRACK_TYPE_TEXT).build().show() },
@@ -170,9 +212,8 @@ fun PlayerScreen(nav: NavController, url: String) {
                 ) { Icon(Icons.Default.MusicNote, contentDescription = "音轨", tint = Color.White) }
             }
         }
-        IconButton(
+        if (!locked) IconButton(
             onClick = {
-                locked = false
                 fullscreen = !fullscreen
                 activity?.requestedOrientation = if (fullscreen) ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE else ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
                 val controller = activity?.let { WindowCompat.getInsetsController(it.window, view) }
@@ -186,7 +227,26 @@ fun PlayerScreen(nav: NavController, url: String) {
             onClick = { locked = !locked },
             modifier = Modifier.align(Alignment.TopEnd).padding(top = 20.dp, end = 16.dp),
         ) {
-            Icon(if (locked) Icons.Default.LockOpen else Icons.Default.Lock, contentDescription = if (locked) "解锁播放器" else "锁定播放器", tint = Color.White)
+            Icon(
+                if (locked) Icons.Default.Lock else Icons.Default.LockOpen,
+                contentDescription = if (locked) "已锁定，点击解锁" else "未锁定，点击锁定",
+                tint = Color.White,
+            )
+        }
+        gestureHint?.let { hint ->
+            Row(
+                modifier = Modifier.align(Alignment.Center)
+                    .background(Color.Black.copy(alpha = 0.72f), RoundedCornerShape(12.dp))
+                    .padding(horizontal = 18.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    if (hint.startsWith("亮度")) Icons.Default.Brightness6 else Icons.Default.VolumeUp,
+                    contentDescription = null,
+                    tint = Color.White,
+                )
+                Text(hint, color = Color.White, modifier = Modifier.padding(start = 8.dp))
+            }
         }
     }
 }
