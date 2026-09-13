@@ -7,7 +7,9 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
@@ -21,6 +23,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -29,6 +32,8 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -37,6 +42,7 @@ import com.filmvault.app.data.model.HistoryItem
 import com.filmvault.app.util.FavEntry
 import com.filmvault.app.viewmodel.LibraryViewModel
 import com.filmvault.app.ui.components.MainBottomBar
+import com.filmvault.app.ui.components.PosterImage
 
 @Composable
 fun LibraryScreen(nav: NavController) {
@@ -104,9 +110,17 @@ private fun FavRow(item: FavEntry, onClick: () -> Unit) {
         color = MaterialTheme.colorScheme.surfaceVariant,
         modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
     ) {
-        Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text(item.title, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
-            item.year?.let { Text("$it", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)) }
+        Row(Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
+            PosterImage(
+                url = "/img/${item.dir}/${item.id}/256.webp",
+                contentDescription = item.title,
+                modifier = Modifier.width(56.dp).height(80.dp).clip(RoundedCornerShape(6.dp)),
+                contentScale = ContentScale.Crop,
+            )
+            Column(Modifier.padding(start = 12.dp).weight(1f)) {
+                Text(item.title, style = MaterialTheme.typography.bodyMedium)
+                item.year?.let { Text("$it", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)) }
+            }
         }
     }
 }
@@ -118,9 +132,17 @@ private fun HistRow(item: HistoryItem, onClick: () -> Unit) {
         color = MaterialTheme.colorScheme.surfaceVariant,
         modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
     ) {
-        Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text(item.title, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
-            item.episode?.let { Text("第${it}集", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)) }
+        Row(Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
+            PosterImage(
+                url = "/img/${item.dir}/${item.id}/256.webp",
+                contentDescription = item.title,
+                modifier = Modifier.width(56.dp).height(80.dp).clip(RoundedCornerShape(6.dp)),
+                contentScale = ContentScale.Crop,
+            )
+            Column(Modifier.padding(start = 12.dp).weight(1f)) {
+                Text(item.title, style = MaterialTheme.typography.bodyMedium)
+                item.episode?.let { Text("第${it}集", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)) }
+            }
         }
     }
 }
