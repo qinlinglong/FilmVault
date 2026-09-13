@@ -47,6 +47,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
@@ -66,10 +68,11 @@ import kotlinx.coroutines.launch
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Tracks
+import androidx.media3.common.TrackSelectionOverride
+import androidx.media3.common.TrackGroup
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
 import androidx.media3.ui.PlayerView
-import androidx.media3.ui.TrackSelectionDialogBuilder
 import androidx.navigation.NavController
 import com.filmvault.app.di.AppModule
 import android.widget.Toast
@@ -89,6 +92,28 @@ private fun applyPlayerImmersiveMode(activity: android.app.Activity?, view: andr
         android.view.View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
         android.view.View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
 }
+
+private data class PlayerTrackOption(
+    val group: TrackGroup,
+    val index: Int,
+    val label: String,
+)
+
+private fun trackOptions(tracks: Tracks, type: Int): List<PlayerTrackOption> =
+    tracks.groups.filter { it.type == type }.flatMap { group ->
+        (0 until group.length).map { index ->
+            val format = group.getTrackFormat(index)
+            val size = if (type == C.TRACK_TYPE_VIDEO && format.height > 0) {
+                "${format.width}×${format.height}"
+            } else null
+            val language = format.language?.takeIf { it.isNotBlank() }
+            val label = listOfNotNull(format.label?.toString(), language, size)
+                .distinct()
+                .joinToString(" / ")
+                .ifBlank { "轨道 ${index + 1}" }
+            PlayerTrackOption(group.getMediaTrackGroup(), index, label)
+        }
+    }
 
 /**
  * 原生播放器（Media3 ExoPlayer）。用于直接视频直链（m3u8 / mp4 / dash）。
@@ -122,6 +147,7 @@ fun PlayerScreen(
     var currentEpisode by remember { mutableStateOf(startEpisode.coerceIn(1, episodeCount.coerceAtLeast(1))) }
     var playlistExpanded by remember { mutableStateOf(false) }
     var speedMenuExpanded by remember { mutableStateOf(false) }
+    var trackMenuType by remember { mutableStateOf<Int?>(null) }
     var playbackSpeed by remember { mutableStateOf(1f) }
     var switchingEpisode by remember { mutableStateOf(false) }
     var exiting by remember { mutableStateOf(false) }
@@ -147,6 +173,22 @@ fun PlayerScreen(
             prepare()
             playWhenReady = true
         }
+    }
+
+    fun selectTrack(option: PlayerTrackOption, type: Int) {
+        player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
+            .setTrackTypeDisabled(type, false)
+            .setOverrideForType(TrackSelectionOverride(option.group, option.index))
+            .build()
+        trackMenuType = null
+    }
+
+    fun disableTrackType(type: Int) {
+        player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
+            .clearOverridesOfType(type)
+            .setTrackTypeDisabled(type, true)
+            .build()
+        trackMenuType = null
     }
 
     fun switchEpisode(episode: Int) {
@@ -373,8 +415,9 @@ fun PlayerScreen(
                         if (episodeTotal > 1 && lineId.isNotBlank()) {
                             Box {
                                 IconButton(onClick = {
-                                    playlistExpanded = true
-                                    speedMenuExpanded = false
+                    playlistExpanded = true
+                    speedMenuExpanded = false
+                    trackMenuType = null
                                 }) {
                                     Icon(
                                         Icons.Default.PlaylistPlay,
@@ -389,6 +432,7 @@ fun PlayerScreen(
                         IconButton(onClick = {
                             speedMenuExpanded = true
                             playlistExpanded = false
+                            trackMenuType = null
                         }) {
                             Text("${playbackSpeed}x", color = Color.White)
                         }
@@ -398,7 +442,9 @@ fun PlayerScreen(
                     if (hasQualityOptions) {
                         IconButton(
                             onClick = {
-                                TrackSelectionDialogBuilder(context, "选择清晰度", player, C.TRACK_TYPE_VIDEO).build().show()
+                                trackMenuType = C.TRACK_TYPE_VIDEO
+                                playlistExpanded = false
+                                speedMenuExpanded = false
                             },
                         ) {
                             Text("清晰度", color = Color.White)
@@ -406,12 +452,20 @@ fun PlayerScreen(
                     }
                     if (tracks.groups.any { it.type == C.TRACK_TYPE_TEXT }) {
                         IconButton(
-                            onClick = { TrackSelectionDialogBuilder(context, "选择字幕", player, C.TRACK_TYPE_TEXT).build().show() },
+                            onClick = {
+                                trackMenuType = C.TRACK_TYPE_TEXT
+                                playlistExpanded = false
+                                speedMenuExpanded = false
+                            },
                         ) { Icon(Icons.Default.Subtitles, contentDescription = "字幕设置", tint = Color.White) }
                     }
                     if (tracks.groups.any { it.type == C.TRACK_TYPE_AUDIO }) {
                         IconButton(
-                            onClick = { TrackSelectionDialogBuilder(context, "选择音轨", player, C.TRACK_TYPE_AUDIO).build().show() },
+                            onClick = {
+                                trackMenuType = C.TRACK_TYPE_AUDIO
+                                playlistExpanded = false
+                                speedMenuExpanded = false
+                            },
                         ) { Icon(Icons.Default.MusicNote, contentDescription = "音轨设置", tint = Color.White) }
                     }
                         IconButton(
@@ -428,14 +482,15 @@ fun PlayerScreen(
                 }
             }
         }
-        // 菜单直接绘制在播放器窗口内，不使用独立 Popup，避免华为设备关闭弹框时
-        // 重新派发系统栏 Insets 导致底部控制面板抖动。
-        if (!locked && controlsVisible && (playlistExpanded || speedMenuExpanded)) {
+        // 所有菜单均绘制在播放器窗口内，不使用独立 Popup/Dialog，避免华为设备关闭
+        // 弹框时触发系统栏 Insets 重排导致底部控制面板抖动。
+        if (!locked && controlsVisible && (playlistExpanded || speedMenuExpanded || trackMenuType != null)) {
             Box(
-                modifier = Modifier.fillMaxSize().pointerInput(playlistExpanded, speedMenuExpanded) {
+                modifier = Modifier.fillMaxSize().pointerInput(playlistExpanded, speedMenuExpanded, trackMenuType) {
                     detectTapGestures {
                         playlistExpanded = false
                         speedMenuExpanded = false
+                        trackMenuType = null
                     }
                 },
             )
@@ -445,31 +500,65 @@ fun PlayerScreen(
                     .widthIn(min = 160.dp, max = 280.dp)
                     .heightIn(max = 420.dp)
                     .verticalScroll(rememberScrollState())
-                    .background(Color.Black.copy(alpha = 0.92f), RoundedCornerShape(12.dp))
+                    .background(Color.Black.copy(alpha = 0.94f), RoundedCornerShape(14.dp))
                     .padding(vertical = 4.dp),
             ) {
-                if (playlistExpanded) {
-                    (1..episodeTotal).forEach { episode ->
+                val menuTitle = when {
+                    playlistExpanded -> "播放清单"
+                    speedMenuExpanded -> "播放速度"
+                    trackMenuType == C.TRACK_TYPE_VIDEO -> "清晰度"
+                    trackMenuType == C.TRACK_TYPE_TEXT -> "字幕"
+                    else -> "音轨"
+                }
+                Text(
+                    text = menuTitle,
+                    color = Color.White.copy(alpha = 0.72f),
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Medium,
+                    modifier = Modifier.padding(horizontal = 18.dp, vertical = 8.dp),
+                )
+                when {
+                    playlistExpanded -> (1..episodeTotal).forEach { episode ->
                         Text(
                             text = if (episode == currentEpisode) "第${episode}集（播放中）" else "第${episode}集",
-                            color = Color.White,
+                            color = if (episode == currentEpisode) Color(0xFF90CAF9) else Color.White,
                             modifier = Modifier.fillMaxWidth().clickable {
                                 playlistExpanded = false
                                 if (episode != currentEpisode) switchEpisode(episode)
                             }.padding(horizontal = 18.dp, vertical = 12.dp),
                         )
                     }
-                } else {
-                    listOf(0.5f, 0.75f, 1f, 1.25f, 1.5f, 2f).forEach { speed ->
+                    speedMenuExpanded -> listOf(0.5f, 0.75f, 1f, 1.25f, 1.5f, 2f).forEach { speed ->
                         Text(
                             text = "${speed}x${if (speed == playbackSpeed) "（当前）" else ""}",
-                            color = Color.White,
+                            color = if (speed == playbackSpeed) Color(0xFF90CAF9) else Color.White,
                             modifier = Modifier.fillMaxWidth().clickable {
                                 playbackSpeed = speed
                                 player.setPlaybackSpeed(speed)
                                 speedMenuExpanded = false
                             }.padding(horizontal = 18.dp, vertical = 12.dp),
                         )
+                    }
+                    else -> {
+                        val type = trackMenuType ?: C.TRACK_TYPE_AUDIO
+                        if (type == C.TRACK_TYPE_TEXT) {
+                            Text(
+                                text = "关闭字幕",
+                                color = Color.White,
+                                modifier = Modifier.fillMaxWidth().clickable {
+                                    disableTrackType(type)
+                                }.padding(horizontal = 18.dp, vertical = 12.dp),
+                            )
+                        }
+                        trackOptions(tracks, type).forEach { option ->
+                            Text(
+                                text = option.label,
+                                color = Color.White,
+                                modifier = Modifier.fillMaxWidth().clickable {
+                                    selectTrack(option, type)
+                                }.padding(horizontal = 18.dp, vertical = 12.dp),
+                            )
+                        }
                     }
                 }
             }
@@ -481,6 +570,7 @@ fun PlayerScreen(
                 if (locked) {
                     playlistExpanded = false
                     speedMenuExpanded = false
+                    trackMenuType = null
                     controlsVisible = false
                 } else {
                     controlsVisible = true
