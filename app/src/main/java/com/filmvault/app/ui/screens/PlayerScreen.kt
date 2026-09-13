@@ -101,9 +101,15 @@ fun PlayerScreen(
     var tracks by remember { mutableStateOf(Tracks.EMPTY) }
     var currentEpisode by remember { mutableStateOf(startEpisode.coerceIn(1, episodeCount.coerceAtLeast(1))) }
     var playlistExpanded by remember { mutableStateOf(false) }
+    var speedMenuExpanded by remember { mutableStateOf(false) }
+    var playbackSpeed by remember { mutableStateOf(1f) }
     var switchingEpisode by remember { mutableStateOf(false) }
     var exiting by remember { mutableStateOf(false) }
     val episodeTotal = episodeCount.coerceAtLeast(1)
+    val videoTrackCount = tracks.groups
+        .filter { it.type == C.TRACK_TYPE_VIDEO }
+        .sumOf { it.length }
+    val hasQualityOptions = videoTrackCount > 1
     val playerScope = rememberCoroutineScope()
     val currentEpisodeState by rememberUpdatedState(currentEpisode)
     val switchingEpisodeState by rememberUpdatedState(switchingEpisode)
@@ -214,30 +220,48 @@ fun PlayerScreen(
                     // 保留亮度/音量调节。
                     var startX = 0f
                     var startY = 0f
+                    var startBrightness = 0.5f
+                    var startVolume = 0
+
+                    fun updateGestureValue(deltaY: Float, touchX: Float, viewWidth: Int) {
+                        if (touchX < viewWidth / 2f) {
+                            val next = (startBrightness + deltaY / 900f).coerceIn(0.05f, 1f)
+                            activity?.window?.let { window ->
+                                window.attributes = window.attributes.apply { screenBrightness = next }
+                            }
+                            gestureHint = "亮度 ${(next * 100).toInt()}%"
+                        } else {
+                            val max = audioManager?.getStreamMaxVolume(AudioManager.STREAM_MUSIC) ?: 15
+                            val next = (startVolume + deltaY / 900f * max).toInt().coerceIn(0, max)
+                            audioManager?.setStreamVolume(AudioManager.STREAM_MUSIC, next, 0)
+                            gestureHint = "音量 ${(next * 100 / max.coerceAtLeast(1))}%"
+                        }
+                    }
+
                     setOnTouchListener { playerView, event ->
                         when (event.actionMasked) {
                             MotionEvent.ACTION_DOWN -> {
                                 startX = event.x
                                 startY = event.y
+                                startBrightness = activity?.window?.attributes?.screenBrightness
+                                    ?.takeIf { it >= 0f } ?: 0.5f
+                                startVolume = audioManager?.getStreamVolume(AudioManager.STREAM_MUSIC) ?: 0
+                            }
+                            MotionEvent.ACTION_MOVE -> {
+                                val deltaY = startY - event.y
+                                val isVerticalGesture = kotlin.math.abs(deltaY) >= 30f &&
+                                    kotlin.math.abs(deltaY) > kotlin.math.abs(startX - event.x) * 1.2f
+                                if (isVerticalGesture) {
+                                    // 移动过程中实时更新系统值和提示，不再等到抬手后才显示结果。
+                                    updateGestureValue(deltaY, startX, playerView.width)
+                                }
                             }
                             MotionEvent.ACTION_UP -> {
                                 val deltaY = startY - event.y
                                 val isVerticalGesture = kotlin.math.abs(deltaY) >= 80f &&
                                     kotlin.math.abs(deltaY) > kotlin.math.abs(startX - event.x) * 1.2f
                                 if (isVerticalGesture) {
-                                    if (startX < playerView.width / 2f) {
-                                        val window = activity?.window
-                                        val current = window?.attributes?.screenBrightness?.takeIf { it >= 0f } ?: 0.5f
-                                        val next = (current + deltaY / 900f).coerceIn(0.05f, 1f)
-                                        window?.let { it.attributes = it.attributes.apply { screenBrightness = next } }
-                                        gestureHint = "亮度 ${(next * 100).toInt()}%"
-                                    } else {
-                                        val max = audioManager?.getStreamMaxVolume(AudioManager.STREAM_MUSIC) ?: 15
-                                        val current = audioManager?.getStreamVolume(AudioManager.STREAM_MUSIC) ?: 0
-                                        val next = (current + deltaY / 900f * max).toInt().coerceIn(0, max)
-                                        audioManager?.setStreamVolume(AudioManager.STREAM_MUSIC, next, 0)
-                                        gestureHint = "音量 ${(next * 100 / max.coerceAtLeast(1))}%"
-                                    }
+                                    updateGestureValue(deltaY, startX, playerView.width)
                                     gestureScope.launch {
                                         delay(900)
                                         gestureHint = null
@@ -340,6 +364,38 @@ fun PlayerScreen(
                                 }
                             }
                         }
+                    // 倍速与其它播放器操作保持在同一个底部控制面板内。
+                    Box {
+                        IconButton(onClick = { speedMenuExpanded = true }) {
+                            Text("${playbackSpeed}x", color = Color.White)
+                        }
+                        DropdownMenu(
+                            expanded = speedMenuExpanded,
+                            onDismissRequest = { speedMenuExpanded = false },
+                        ) {
+                            listOf(0.5f, 0.75f, 1f, 1.25f, 1.5f, 2f).forEach { speed ->
+                                DropdownMenuItem(
+                                    text = { Text("${speed}x${if (speed == playbackSpeed) "（当前）" else ""}") },
+                                    onClick = {
+                                        playbackSpeed = speed
+                                        player.setPlaybackSpeed(speed)
+                                        speedMenuExpanded = false
+                                    },
+                                )
+                            }
+                        }
+                    }
+                    // 只有存在多个视频轨道/分辨率时显示清晰度入口，单一画质资源不显示
+                    // 没有实际作用的按钮。
+                    if (hasQualityOptions) {
+                        IconButton(
+                            onClick = {
+                                TrackSelectionDialogBuilder(context, "选择清晰度", player, C.TRACK_TYPE_VIDEO).build().show()
+                            },
+                        ) {
+                            Text("清晰度", color = Color.White)
+                        }
+                    }
                     if (tracks.groups.any { it.type == C.TRACK_TYPE_TEXT }) {
                         IconButton(
                             onClick = { TrackSelectionDialogBuilder(context, "选择字幕", player, C.TRACK_TYPE_TEXT).build().show() },
@@ -370,6 +426,7 @@ fun PlayerScreen(
                 locked = !locked
                 if (locked) {
                     playlistExpanded = false
+                    speedMenuExpanded = false
                     controlsVisible = false
                 } else {
                     controlsVisible = true
