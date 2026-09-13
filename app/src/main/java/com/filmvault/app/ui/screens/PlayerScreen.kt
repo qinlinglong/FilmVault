@@ -35,16 +35,20 @@ import androidx.compose.material.icons.filled.Brightness6
 import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material.icons.filled.Subtitles
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.PlaylistPlay
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Slider
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
@@ -97,6 +101,7 @@ private data class PlayerTrackOption(
     val group: TrackGroup,
     val index: Int,
     val label: String,
+    val selected: Boolean,
 )
 
 private fun trackOptions(tracks: Tracks, type: Int): List<PlayerTrackOption> =
@@ -111,9 +116,31 @@ private fun trackOptions(tracks: Tracks, type: Int): List<PlayerTrackOption> =
                 .distinct()
                 .joinToString(" / ")
                 .ifBlank { "轨道 ${index + 1}" }
-            PlayerTrackOption(group.getMediaTrackGroup(), index, label)
+            PlayerTrackOption(group.getMediaTrackGroup(), index, label, group.isTrackSelected(index))
         }
     }
+
+@Composable
+private fun PlayerMenuItem(label: String, selected: Boolean = false, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .background(if (selected) Color(0xFF294B70) else Color.Transparent)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 11.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = label,
+            color = if (selected) Color(0xFFB9DCFF) else Color.White,
+            fontSize = 14.sp,
+            modifier = Modifier.weight(1f),
+        )
+        if (selected) {
+            Icon(Icons.Default.Check, contentDescription = "已选择", tint = Color(0xFF90CAF9))
+        }
+    }
+}
 
 /**
  * 原生播放器（Media3 ExoPlayer）。用于直接视频直链（m3u8 / mp4 / dash）。
@@ -494,15 +521,19 @@ fun PlayerScreen(
                     }
                 },
             )
-            Column(
+            Surface(
                 modifier = Modifier.align(Alignment.BottomEnd)
                     .padding(end = 16.dp, bottom = 128.dp)
-                    .widthIn(min = 160.dp, max = 280.dp)
-                    .heightIn(max = 420.dp)
-                    .verticalScroll(rememberScrollState())
-                    .background(Color.Black.copy(alpha = 0.94f), RoundedCornerShape(14.dp))
-                    .padding(vertical = 4.dp),
+                    .widthIn(min = 190.dp, max = 300.dp)
+                    .heightIn(max = 420.dp),
+                shape = RoundedCornerShape(18.dp),
+                color = Color(0xFF17191D),
+                shadowElevation = 12.dp,
+                tonalElevation = 8.dp,
             ) {
+                Column(
+                    modifier = Modifier.verticalScroll(rememberScrollState()).padding(6.dp),
+                ) {
                 val menuTitle = when {
                     playlistExpanded -> "播放清单"
                     speedMenuExpanded -> "播放速度"
@@ -510,56 +541,64 @@ fun PlayerScreen(
                     trackMenuType == C.TRACK_TYPE_TEXT -> "字幕"
                     else -> "音轨"
                 }
-                Text(
-                    text = menuTitle,
-                    color = Color.White.copy(alpha = 0.72f),
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Medium,
-                    modifier = Modifier.padding(horizontal = 18.dp, vertical = 8.dp),
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(start = 10.dp, top = 2.dp, end = 2.dp, bottom = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = menuTitle,
+                        color = Color.White,
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.weight(1f),
+                    )
+                    IconButton(onClick = {
+                        playlistExpanded = false
+                        speedMenuExpanded = false
+                        trackMenuType = null
+                    }) {
+                        Icon(Icons.Default.Close, contentDescription = "关闭", tint = Color.White.copy(alpha = 0.75f))
+                    }
+                }
                 when {
                     playlistExpanded -> (1..episodeTotal).forEach { episode ->
-                        Text(
-                            text = if (episode == currentEpisode) "第${episode}集（播放中）" else "第${episode}集",
-                            color = if (episode == currentEpisode) Color(0xFF90CAF9) else Color.White,
-                            modifier = Modifier.fillMaxWidth().clickable {
+                        PlayerMenuItem(
+                            label = if (episode == currentEpisode) "第${episode}集（播放中）" else "第${episode}集",
+                            selected = episode == currentEpisode,
+                            onClick = {
                                 playlistExpanded = false
                                 if (episode != currentEpisode) switchEpisode(episode)
-                            }.padding(horizontal = 18.dp, vertical = 12.dp),
+                            },
                         )
                     }
                     speedMenuExpanded -> listOf(0.5f, 0.75f, 1f, 1.25f, 1.5f, 2f).forEach { speed ->
-                        Text(
-                            text = "${speed}x${if (speed == playbackSpeed) "（当前）" else ""}",
-                            color = if (speed == playbackSpeed) Color(0xFF90CAF9) else Color.White,
-                            modifier = Modifier.fillMaxWidth().clickable {
+                        PlayerMenuItem(
+                            label = "${speed}x",
+                            selected = speed == playbackSpeed,
+                            onClick = {
                                 playbackSpeed = speed
                                 player.setPlaybackSpeed(speed)
                                 speedMenuExpanded = false
-                            }.padding(horizontal = 18.dp, vertical = 12.dp),
+                            },
                         )
                     }
                     else -> {
                         val type = trackMenuType ?: C.TRACK_TYPE_AUDIO
                         if (type == C.TRACK_TYPE_TEXT) {
-                            Text(
-                                text = "关闭字幕",
-                                color = Color.White,
-                                modifier = Modifier.fillMaxWidth().clickable {
-                                    disableTrackType(type)
-                                }.padding(horizontal = 18.dp, vertical = 12.dp),
+                            PlayerMenuItem(
+                                label = "关闭字幕",
+                                onClick = { disableTrackType(type) },
                             )
                         }
                         trackOptions(tracks, type).forEach { option ->
-                            Text(
-                                text = option.label,
-                                color = Color.White,
-                                modifier = Modifier.fillMaxWidth().clickable {
-                                    selectTrack(option, type)
-                                }.padding(horizontal = 18.dp, vertical = 12.dp),
+                            PlayerMenuItem(
+                                label = option.label,
+                                selected = option.selected,
+                                onClick = { selectTrack(option, type) },
                             )
                         }
                     }
+                }
                 }
             }
         }
