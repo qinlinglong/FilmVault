@@ -8,6 +8,8 @@ import com.filmvault.app.util.SiteSettingsStore
 
 /** 简易依赖容器：在 Application 中初始化，全局共享。 */
 object AppModule {
+    lateinit var appContext: Context
+        private set
     lateinit var apiClient: ApiClient
         private set
     lateinit var favoritesStore: FavoritesStore
@@ -19,9 +21,10 @@ object AppModule {
 
     fun init(context: Context) {
         if (::apiClient.isInitialized) return
-        siteSettings = SiteSettingsStore(context.applicationContext)
-        apiClient = ApiClient(context.applicationContext, siteSettings)
-        favoritesStore = FavoritesStore(context.applicationContext)
+        appContext = context.applicationContext
+        siteSettings = SiteSettingsStore(appContext)
+        apiClient = ApiClient(appContext, siteSettings)
+        favoritesStore = FavoritesStore(appContext)
         repository = FilmRepository(apiClient, favoritesStore)
     }
 }

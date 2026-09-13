@@ -45,7 +45,8 @@ fun HomeScreen(nav: NavController) {
     val siteUrl by AppModule.siteSettings.siteUrlFlow.collectAsState(initial = AppModule.siteSettings.siteUrlNow)
 
     LaunchedEffect(siteUrl) {
-        vm.load()
+        vm.restoreCache(siteUrl)
+        vm.load(siteUrl)
     }
 
     Column(Modifier.fillMaxSize()) {
@@ -66,9 +67,9 @@ fun HomeScreen(nav: NavController) {
             Modifier.weight(1f).fillMaxWidth().padding(vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            item { HomeSection("最近更新的电影", "mv", vm.sections["mv"].orEmpty(), vm.isLoading, vm.error, nav) { vm.load() } }
-            item { HomeSection("最近更新的剧集", "tv", vm.sections["tv"].orEmpty(), vm.isLoading, vm.error, nav) { vm.load() } }
-            item { HomeSection("最近更新的动漫", "ac", vm.sections["ac"].orEmpty(), vm.isLoading, vm.error, nav) { vm.load() } }
+            item { HomeSection("最近更新的电影", "mv", vm.sections["mv"].orEmpty(), vm.isLoading, vm.error, nav) { vm.load(siteUrl) } }
+            item { HomeSection("最近更新的剧集", "tv", vm.sections["tv"].orEmpty(), vm.isLoading, vm.error, nav) { vm.load(siteUrl) } }
+            item { HomeSection("最近更新的动漫", "ac", vm.sections["ac"].orEmpty(), vm.isLoading, vm.error, nav) { vm.load(siteUrl) } }
         }
         MainBottomBar(nav, "home")
     }

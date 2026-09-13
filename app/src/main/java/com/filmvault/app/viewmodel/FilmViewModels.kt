@@ -12,6 +12,8 @@ import com.filmvault.app.data.model.Resources
 import com.filmvault.app.data.repository.FilmRepository
 import com.filmvault.app.di.AppModule
 import com.filmvault.app.util.FavEntry
+import com.filmvault.app.util.HomeCacheStore
+import com.filmvault.app.util.hostOf
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -68,16 +70,34 @@ class HomeViewModel : ViewModel() {
     var isLoading by mutableStateOf(false)
     var error by mutableStateOf<String?>(null)
 
-    fun load() {
+    private val homeCache = HomeCacheStore(AppModule.appContext)
+    private var cachedHost: String = ""
+
+    fun restoreCache(siteUrl: String) {
+        val host = hostOf(siteUrl)
+        if (host == cachedHost) return
+        cachedHost = host
+        // 切换仓库时不能继续显示上一个仓库的内容。
+        sections = homeCache.read(host)
+        error = null
+    }
+
+    fun load(siteUrl: String = AppModule.siteSettings.siteUrlNow) {
         if (isLoading) return
         viewModelScope.launch {
             isLoading = true
             error = null
             try {
-                sections = repo.getHome()
-                if (sections.isEmpty()) error = "首页数据暂时不可用"
+                val fresh = repo.getHome()
+                if (fresh.isNotEmpty()) {
+                    // getHome 解析网页首页的原始 inlist 顺序；不要在客户端重新排序。
+                    sections = fresh
+                    homeCache.write(hostOf(siteUrl), fresh)
+                } else if (sections.isEmpty()) {
+                    error = "首页数据暂时不可用"
+                }
             } catch (e: Exception) {
-                error = "加载失败：${e.message}"
+                if (sections.isEmpty()) error = "加载失败：${e.message}"
             } finally { isLoading = false }
         }
     }

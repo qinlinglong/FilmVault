@@ -1,6 +1,9 @@
 package com.filmvault.app.data.model
 
+import kotlinx.serialization.Serializable
+
 /** 列表中的单部影片（列存 JSON 解析后的扁平结构） */
+@Serializable
 data class MovieItem(
     val id: String,
     val dir: String,            // mv / tv / ac

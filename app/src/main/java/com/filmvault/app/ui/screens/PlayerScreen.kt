@@ -1,3 +1,5 @@
+@file:androidx.media3.common.util.UnstableApi
+
 package com.filmvault.app.ui.screens
 
 import android.view.ViewGroup
@@ -121,7 +123,9 @@ fun PlayerScreen(nav: NavController, url: String) {
                             }
                             MotionEvent.ACTION_UP -> {
                                 val deltaY = startY - event.y
-                                if (kotlin.math.abs(deltaY) >= 80f && kotlin.math.abs(deltaY) > kotlin.math.abs(startX - event.x) * 1.2f) {
+                                val isVerticalGesture = kotlin.math.abs(deltaY) >= 80f &&
+                                    kotlin.math.abs(deltaY) > kotlin.math.abs(startX - event.x) * 1.2f
+                                if (isVerticalGesture) {
                                     if (startX < playerView.width / 2f) {
                                         val window = activity?.window
                                         val current = window?.attributes?.screenBrightness?.takeIf { it >= 0f } ?: 0.5f
@@ -131,6 +135,8 @@ fun PlayerScreen(nav: NavController, url: String) {
                                         val direction = if (deltaY > 0f) AudioManager.ADJUST_RAISE else AudioManager.ADJUST_LOWER
                                         audioManager?.adjustStreamVolume(AudioManager.STREAM_MUSIC, direction, 0)
                                     }
+                                } else {
+                                    playerView.performClick()
                                 }
                             }
                             MotionEvent.ACTION_CANCEL -> {
