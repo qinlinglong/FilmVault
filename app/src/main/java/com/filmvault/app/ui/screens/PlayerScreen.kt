@@ -10,6 +10,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -34,6 +35,7 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -87,7 +89,11 @@ fun PlayerScreen(
     var fullscreen by remember { mutableStateOf(true) }
     var isPlaying by remember { mutableStateOf(true) }
     var gestureHint by remember { mutableStateOf<String?>(null) }
-    var playerView by remember { mutableStateOf<PlayerView?>(null) }
+    var controlsVisible by remember { mutableStateOf(true) }
+    var positionMs by remember { mutableStateOf(0L) }
+    var durationMs by remember { mutableStateOf(1L) }
+    var bufferedPositionMs by remember { mutableStateOf(0L) }
+    var scrubbing by remember { mutableStateOf(false) }
     val gestureScope = rememberCoroutineScope()
     val activity = context as? android.app.Activity
     val audioManager = remember { context.getSystemService(AudioManager::class.java) }
@@ -101,6 +107,7 @@ fun PlayerScreen(
     val playerScope = rememberCoroutineScope()
     val currentEpisodeState by rememberUpdatedState(currentEpisode)
     val switchingEpisodeState by rememberUpdatedState(switchingEpisode)
+    val scrubbingState by rememberUpdatedState(scrubbing)
     val previousOrientation = remember {
         activity?.requestedOrientation ?: ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
     }
@@ -146,6 +153,19 @@ fun PlayerScreen(
         onDispose { player.removeListener(listener) }
     }
 
+    // 自定义控制器的进度状态。进度条、时间和底部操作栏属于同一个 Compose 面板，
+    // 避免 Media3 默认控制栏与自定义按钮分层、错位或重复显示。
+    androidx.compose.runtime.LaunchedEffect(player) {
+        while (true) {
+            if (!scrubbingState) {
+                positionMs = player.currentPosition.coerceAtLeast(0L)
+                durationMs = player.duration.takeIf { it > 0L } ?: 1L
+                bufferedPositionMs = player.bufferedPosition.coerceAtLeast(0L)
+            }
+            delay(500)
+        }
+    }
+
     DisposableEffect(view) {
         val window = (view.context as? android.app.Activity)?.window
         val controller = window?.let { WindowCompat.getInsetsController(it, view) }
@@ -184,18 +204,14 @@ fun PlayerScreen(
             modifier = Modifier.fillMaxSize(),
             factory = { ctx ->
                 PlayerView(ctx).apply {
-                    playerView = this
                     layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
                     this.player = player
-                    useController = true
-                    controllerAutoShow = true
-                    // 普通点击由下面的触摸监听显式切换，避免 Media3 的自动超时造成
-                    // “先消失、又回弹、再消失”的延迟体验。
-                    controllerHideOnTouch = false
-                    controllerShowTimeoutMs = 3500
+                    // 控制器完全由下面的 Compose 面板统一绘制，避免默认控制栏与自定义
+                    // 工具栏分离。PlayerView 这里只负责视频画面。
+                    useController = false
 
-                    // 手势直接挂在 PlayerView 上，并返回 false，让普通点击继续交给
-                    // Media3 控制栏处理（播放/暂停、进度拖动、快进/快退等）。
+                    // 手势直接挂在 PlayerView 上。普通点击切换统一控制面板，竖向滑动
+                    // 保留亮度/音量调节。
                     var startX = 0f
                     var startY = 0f
                     setOnTouchListener { playerView, event ->
@@ -227,14 +243,7 @@ fun PlayerScreen(
                                         gestureHint = null
                                     }
                                 } else if (!locked) {
-                                    // 点击视频区域时立即在显示/隐藏之间切换控制栏。
-                                    // 不再交给 PlayerView 的默认自动显示逻辑处理。
-                                    val mediaPlayerView = playerView as PlayerView
-                                    if (mediaPlayerView.isControllerFullyVisible) {
-                                        mediaPlayerView.hideController()
-                                    } else {
-                                        mediaPlayerView.showController()
-                                    }
+                                    controlsVisible = !controlsVisible
                                 }
                             }
                             MotionEvent.ACTION_CANCEL -> {
@@ -242,8 +251,8 @@ fun PlayerScreen(
                                 startY = 0f
                             }
                         }
-                        // 背景点击/手势由本监听器消费，防止 PlayerView 再执行一次默认
-                        // 的 controller 自动显示逻辑；控制栏子控件仍可正常接收自己的触摸。
+                        // 背景点击/手势由本监听器消费，控制面板上的 Compose 子控件仍可
+                        // 正常接收自己的点击和拖动事件。
                         true
                     }
                 }
@@ -256,60 +265,81 @@ fun PlayerScreen(
                 Modifier.fillMaxSize().pointerInput(Unit) { detectTapGestures { } },
             )
         }
-        if (!locked) {
-            // 统一放在进度条上方，避免操作按钮分散在屏幕四角造成误触。
-            Row(
+        if (!locked && controlsVisible) {
+            // 进度条与所有工具共用同一个面板：进度条在上、工具栏在下，布局稳定且
+            // 不会再出现进度条和设置按钮属于不同控制层的问题。
+            Column(
                 modifier = Modifier.align(Alignment.BottomCenter)
                     .fillMaxWidth()
                     .padding(horizontal = 12.dp)
                     .padding(bottom = 8.dp)
                     .background(Color.Black.copy(alpha = 0.55f), RoundedCornerShape(24.dp))
-                    .padding(horizontal = 6.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
+                    .padding(horizontal = 12.dp, vertical = 6.dp),
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(onClick = { player.seekBack() }) {
-                        Icon(Icons.Default.Replay10, contentDescription = "后退 10 秒", tint = Color.White)
-                    }
-                    IconButton(onClick = { if (player.isPlaying) player.pause() else player.play() }) {
-                        Icon(
-                            if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                            contentDescription = if (isPlaying) "暂停" else "播放",
-                            tint = Color.White,
-                        )
-                    }
-                    IconButton(onClick = { player.seekForward() }) {
-                        Icon(Icons.Default.Forward10, contentDescription = "前进 10 秒", tint = Color.White)
-                    }
+                    Text(formatDuration(positionMs), color = Color.White)
+                    Slider(
+                        value = positionMs.coerceIn(0L, durationMs).toFloat(),
+                        onValueChange = {
+                            scrubbing = true
+                            positionMs = it.toLong()
+                        },
+                        onValueChangeFinished = {
+                            player.seekTo(positionMs.coerceIn(0L, durationMs))
+                            scrubbing = false
+                        },
+                        valueRange = 0f..durationMs.coerceAtLeast(1L).toFloat(),
+                        modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
+                    )
+                    Text(formatDuration(durationMs), color = Color.White)
                 }
-                // 设置类操作紧挨右下角全屏按钮，便于单手操作。
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    if (episodeTotal > 1 && lineId.isNotBlank()) {
-                        Box {
-                            IconButton(onClick = { playlistExpanded = true }) {
-                                Icon(
-                                    Icons.Default.PlaylistPlay,
-                                    contentDescription = if (lineName.isBlank()) "播放清单" else "播放清单：$lineName",
-                                    tint = Color.White,
-                                )
-                            }
-                            DropdownMenu(
-                                expanded = playlistExpanded,
-                                onDismissRequest = { playlistExpanded = false },
-                            ) {
-                                (1..episodeTotal).forEach { episode ->
-                                    DropdownMenuItem(
-                                        text = { Text(if (episode == currentEpisode) "第${episode}集（播放中）" else "第${episode}集") },
-                                        onClick = {
-                                            playlistExpanded = false
-                                            if (episode != currentEpisode) switchEpisode(episode)
-                                        },
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        IconButton(onClick = { player.seekBack() }) {
+                            Icon(Icons.Default.Replay10, contentDescription = "后退 10 秒", tint = Color.White)
+                        }
+                        IconButton(onClick = { if (player.isPlaying) player.pause() else player.play() }) {
+                            Icon(
+                                if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                                contentDescription = if (isPlaying) "暂停" else "播放",
+                                tint = Color.White,
+                            )
+                        }
+                        IconButton(onClick = { player.seekForward() }) {
+                            Icon(Icons.Default.Forward10, contentDescription = "前进 10 秒", tint = Color.White)
+                        }
+                    }
+                    // 设置类操作与全屏按钮位于同一行，保留选集、字幕、音轨等完整功能。
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (episodeTotal > 1 && lineId.isNotBlank()) {
+                            Box {
+                                IconButton(onClick = { playlistExpanded = true }) {
+                                    Icon(
+                                        Icons.Default.PlaylistPlay,
+                                        contentDescription = if (lineName.isBlank()) "播放清单" else "播放清单：$lineName",
+                                        tint = Color.White,
                                     )
+                                }
+                                DropdownMenu(
+                                    expanded = playlistExpanded,
+                                    onDismissRequest = { playlistExpanded = false },
+                                ) {
+                                    (1..episodeTotal).forEach { episode ->
+                                        DropdownMenuItem(
+                                            text = { Text(if (episode == currentEpisode) "第${episode}集（播放中）" else "第${episode}集") },
+                                            onClick = {
+                                                playlistExpanded = false
+                                                if (episode != currentEpisode) switchEpisode(episode)
+                                            },
+                                        )
+                                    }
                                 }
                             }
                         }
-                    }
                     if (tracks.groups.any { it.type == C.TRACK_TYPE_TEXT }) {
                         IconButton(
                             onClick = { TrackSelectionDialogBuilder(context, "选择字幕", player, C.TRACK_TYPE_TEXT).build().show() },
@@ -320,15 +350,16 @@ fun PlayerScreen(
                             onClick = { TrackSelectionDialogBuilder(context, "选择音轨", player, C.TRACK_TYPE_AUDIO).build().show() },
                         ) { Icon(Icons.Default.MusicNote, contentDescription = "音轨设置", tint = Color.White) }
                     }
-                    IconButton(
-                        onClick = {
-                            fullscreen = !fullscreen
-                            activity?.requestedOrientation = if (fullscreen) ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE else ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
-                            val controller = activity?.let { WindowCompat.getInsetsController(it.window, view) }
-                            if (fullscreen) controller?.hide(WindowInsetsCompat.Type.systemBars()) else controller?.show(WindowInsetsCompat.Type.systemBars())
-                        },
-                    ) {
-                        Icon(if (fullscreen) Icons.Default.FullscreenExit else Icons.Default.Fullscreen, contentDescription = if (fullscreen) "退出全屏" else "全屏", tint = Color.White)
+                        IconButton(
+                            onClick = {
+                                fullscreen = !fullscreen
+                                activity?.requestedOrientation = if (fullscreen) ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE else ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+                                val controller = activity?.let { WindowCompat.getInsetsController(it.window, view) }
+                                if (fullscreen) controller?.hide(WindowInsetsCompat.Type.systemBars()) else controller?.show(WindowInsetsCompat.Type.systemBars())
+                            },
+                        ) {
+                            Icon(if (fullscreen) Icons.Default.FullscreenExit else Icons.Default.Fullscreen, contentDescription = if (fullscreen) "退出全屏" else "全屏", tint = Color.White)
+                        }
                     }
                 }
             }
@@ -337,7 +368,12 @@ fun PlayerScreen(
         IconButton(
             onClick = {
                 locked = !locked
-                if (locked) playerView?.hideController() else playerView?.showController()
+                if (locked) {
+                    playlistExpanded = false
+                    controlsVisible = false
+                } else {
+                    controlsVisible = true
+                }
             },
             modifier = Modifier.align(Alignment.CenterEnd).padding(end = 12.dp),
         ) {
@@ -370,4 +406,13 @@ fun PlayerScreen(
             }
         }
     }
+}
+
+private fun formatDuration(milliseconds: Long): String {
+    val totalSeconds = (milliseconds.coerceAtLeast(0L) / 1000L).toInt()
+    val hours = totalSeconds / 3600
+    val minutes = (totalSeconds % 3600) / 60
+    val seconds = totalSeconds % 60
+    return if (hours > 0) "%d:%02d:%02d".format(hours, minutes, seconds)
+    else "%02d:%02d".format(minutes, seconds)
 }
