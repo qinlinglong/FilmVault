@@ -42,6 +42,7 @@ import com.filmvault.app.ui.components.MainBottomBar
 fun LibraryScreen(nav: NavController) {
     val vm: LibraryViewModel = viewModel()
     val favs by vm.favorites.collectAsState(initial = emptyList())
+    val history by vm.history.collectAsState(initial = emptyList())
     var tab by remember { mutableIntStateOf(0) }
 
     LaunchedEffect(Unit) { vm.loadHistory() }
@@ -80,13 +81,13 @@ fun LibraryScreen(nav: NavController) {
             1 -> {
                 if (vm.isLoading) {
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
-                } else if (vm.history.isEmpty()) {
+                } else if (history.isEmpty()) {
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         Text("暂无观看历史", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))
                     }
                 } else {
                     LazyColumn(Modifier.fillMaxSize().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        items(vm.history, key = { "${it.dir}/${it.id}/${it.episode ?: 0}" }) { HistRow(it) { nav.navigate("detail/${it.dir}/${it.id}") } }
+                        items(history, key = { "${it.dir}/${it.id}/${it.episode ?: 0}" }) { HistRow(it) { nav.navigate("detail/${it.dir}/${it.id}") } }
                     }
                 }
             }

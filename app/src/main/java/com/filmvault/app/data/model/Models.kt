@@ -86,6 +86,7 @@ data class Resources(
 )
 
 /** 观看历史 */
+@Serializable
 data class HistoryItem(
     val id: String,
     val dir: String,

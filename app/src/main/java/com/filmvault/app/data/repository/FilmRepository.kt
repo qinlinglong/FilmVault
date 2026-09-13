@@ -6,6 +6,8 @@ import com.filmvault.app.data.model.Resources
 import com.filmvault.app.data.remote.ApiClient
 import com.filmvault.app.util.FavEntry
 import com.filmvault.app.util.FavoritesStore
+import com.filmvault.app.util.HistoryStore
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -16,6 +18,7 @@ import kotlinx.coroutines.coroutineScope
 class FilmRepository(
     private val api: ApiClient,
     private val favStore: FavoritesStore,
+    private val historyStore: HistoryStore,
 ) {
     suspend fun login(email: String, password: String): Boolean = api.login(email, password)
     fun isLoggedIn(): Boolean = api.isLoggedIn()
@@ -41,6 +44,15 @@ class FilmRepository(
     }
 
     suspend fun getHistory(): List<com.filmvault.app.data.model.HistoryItem> = api.getHistory()
+
+    val history: Flow<List<com.filmvault.app.data.model.HistoryItem>> = historyStore.history
+
+    suspend fun recordHistory(item: com.filmvault.app.data.model.HistoryItem) = historyStore.add(item)
+
+    /** 合并服务器历史到本地，服务器暂时不可用时仍保留本地历史。 */
+    suspend fun syncHistory() {
+        runCatching { getHistory() }.getOrNull()?.forEach { historyStore.add(it) }
+    }
 
     /** 收藏：本地 + 服务器双向写入 */
     suspend fun addFavorite(item: MovieItem) {

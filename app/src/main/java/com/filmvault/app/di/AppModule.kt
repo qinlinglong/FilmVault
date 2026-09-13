@@ -4,6 +4,7 @@ import android.content.Context
 import com.filmvault.app.data.remote.ApiClient
 import com.filmvault.app.data.repository.FilmRepository
 import com.filmvault.app.util.FavoritesStore
+import com.filmvault.app.util.HistoryStore
 import com.filmvault.app.util.SiteSettingsStore
 
 /** 简易依赖容器：在 Application 中初始化，全局共享。 */
@@ -13,6 +14,8 @@ object AppModule {
     lateinit var apiClient: ApiClient
         private set
     lateinit var favoritesStore: FavoritesStore
+        private set
+    lateinit var historyStore: HistoryStore
         private set
     lateinit var siteSettings: SiteSettingsStore
         private set
@@ -25,6 +28,7 @@ object AppModule {
         siteSettings = SiteSettingsStore(appContext)
         apiClient = ApiClient(appContext, siteSettings)
         favoritesStore = FavoritesStore(appContext)
-        repository = FilmRepository(apiClient, favoritesStore)
+        historyStore = HistoryStore(appContext)
+        repository = FilmRepository(apiClient, favoritesStore, historyStore)
     }
 }

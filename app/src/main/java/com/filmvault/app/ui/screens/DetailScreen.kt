@@ -47,6 +47,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import com.filmvault.app.data.model.MagnetItem
+import com.filmvault.app.data.model.HistoryItem
 import com.filmvault.app.di.AppModule
 import com.filmvault.app.ui.components.PosterImage
 import com.filmvault.app.util.Playback
@@ -148,6 +149,10 @@ fun DetailScreen(nav: NavController, dir: String, id: String) {
                     resolvingKey = key
                     scope.launch {
                         try {
+                            // 原生播放器不会经过网页端的历史写入逻辑，先本地记录，保证立即可见。
+                            AppModule.repository.recordHistory(
+                                HistoryItem(id, dir, meta?.title ?: "未命名影片", episode),
+                            )
                             val directUrl = runCatching {
                                 AppModule.repository.resolvePlayUrl(line.id, episode)
                             }.getOrNull()

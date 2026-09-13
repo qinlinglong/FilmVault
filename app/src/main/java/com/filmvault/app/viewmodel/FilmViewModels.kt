@@ -291,16 +291,18 @@ class LibraryViewModel : ViewModel() {
     val favorites: StateFlow<List<FavEntry>> = repo.favorites.stateIn(
         viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList()
     )
-    var history by mutableStateOf<List<HistoryItem>>(emptyList())
+    val history: StateFlow<List<HistoryItem>> = repo.history.stateIn(
+        viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList()
+    )
     var isLoading by mutableStateOf(false)
 
     fun loadHistory() {
         viewModelScope.launch {
             isLoading = true
             try {
-                history = repo.getHistory()
+                repo.syncHistory()
             } catch (_: Exception) {
-                history = emptyList()
+                // 本地历史仍可正常展示
             } finally {
                 isLoading = false
             }
