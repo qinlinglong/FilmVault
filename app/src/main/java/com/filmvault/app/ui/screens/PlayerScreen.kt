@@ -270,6 +270,11 @@ fun PlayerScreen(
         val controller = window?.let { WindowCompat.getInsetsController(it, view) }
         if (window != null) {
             WindowCompat.setDecorFitsSystemWindows(window, false)
+            window.statusBarColor = android.graphics.Color.TRANSPARENT
+            window.navigationBarColor = android.graphics.Color.TRANSPARENT
+            if (android.os.Build.VERSION.SDK_INT >= 29) {
+                window.isNavigationBarContrastEnforced = false
+            }
             // 华为横屏沉浸式下，adjustResize 会在点击工具栏时因导航栏 Insets
             // 短暂变化而压缩窗口，导致底部控制面板向上跳动。播放器固定使用
             // adjustNothing，退出时恢复 Activity 原本的输入模式。

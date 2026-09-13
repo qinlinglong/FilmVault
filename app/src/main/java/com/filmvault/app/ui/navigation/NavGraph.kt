@@ -6,6 +6,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.Lifecycle
@@ -16,6 +17,7 @@ import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.navArgument
 import com.filmvault.app.di.AppModule
 import com.filmvault.app.ui.screens.CatalogScreen
@@ -33,6 +35,13 @@ import com.filmvault.app.util.Constants
 @Composable
 fun AppNavHost(startDestination: String = "auth") {
     val nav = rememberNavController()
+    val currentRoute = nav.currentBackStackEntryAsState().value?.destination?.route
+    val isPlayerRoute = currentRoute?.startsWith("player/") == true
+    Box(
+        modifier = Modifier.fillMaxSize().then(
+            if (isPlayerRoute) Modifier else Modifier.safeDrawingPadding(),
+        ),
+    ) {
     NavHost(navController = nav, startDestination = startDestination) {
         composable("auth") { AuthGate(nav) }
         composable("login") { LoginScreen(nav) }
@@ -87,6 +96,7 @@ fun AppNavHost(startDestination: String = "auth") {
                 lineName = back.arguments?.getString("lineName").orEmpty(),
             )
         }
+    }
     }
 
     val lifecycleOwner = LocalLifecycleOwner.current

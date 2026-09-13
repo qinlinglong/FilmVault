@@ -6,7 +6,6 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
 import androidx.core.view.WindowCompat
@@ -33,7 +32,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             FilmVaultTheme(darkTheme = true) {
                 Surface(Modifier.fillMaxSize()) {
-                    Box(Modifier.fillMaxSize().safeDrawingPadding()) {
+                    Box(Modifier.fillMaxSize()) {
                         AppNavHost()
                     }
                 }
