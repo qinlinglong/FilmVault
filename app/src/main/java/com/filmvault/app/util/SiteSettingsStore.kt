@@ -54,6 +54,9 @@ class SiteSettingsStore(private val context: Context) {
     /** 保存并切换站点地址：写入当前地址，并提到历史列表首位。 */
     suspend fun setSite(raw: String) {
         val url = normalize(raw)
+        // 先更新内存值，确保紧接着发起的登录/接口请求不会读到旧地址。
+        // DataStore 的 Flow 同步是异步的，不能依赖它及时回调完成切换。
+        siteUrlNow = url
         context.dataStore.edit { prefs ->
             prefs[KEY_SITE] = url
             val list = (prefs[KEY_SAVED]?.split("\n")?.filter { it.isNotBlank() } ?: emptyList())
