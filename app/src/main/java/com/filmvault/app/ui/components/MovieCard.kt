@@ -23,6 +23,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
@@ -75,15 +76,14 @@ fun PosterGrid(
 @Composable
 fun PosterPrefetch(items: List<MovieItem>) {
     val context = LocalContext.current
-    val urls = items.map { it.posterUrl }.distinct()
+    // 只预取首屏附近的内容，避免一次性占满连接和解码队列。
+    val urls = items.map { it.posterUrl }.distinct().take(12)
     LaunchedEffect(urls) {
         urls.forEach { url ->
             context.imageLoader.enqueue(
                 ImageRequest.Builder(context)
                     .data(url)
                     .size(256)
-                    .memoryCacheKey(url)
-                    .diskCacheKey(url)
                     .build(),
             )
         }
@@ -161,8 +161,15 @@ fun PosterImage(
     modifier: Modifier = Modifier,
     contentScale: ContentScale = ContentScale.Crop,
 ) {
+    val context = LocalContext.current
+    val request = remember(url) {
+        ImageRequest.Builder(context)
+            .data(url)
+            .size(256)
+            .build()
+    }
     AsyncImage(
-        model = url,
+        model = request,
         contentDescription = contentDescription,
         modifier = modifier.background(MaterialTheme.colorScheme.surfaceVariant),
         contentScale = contentScale,
