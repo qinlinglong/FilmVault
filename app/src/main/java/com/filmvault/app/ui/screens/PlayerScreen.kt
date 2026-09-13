@@ -48,6 +48,7 @@ import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import androidx.core.view.ViewCompat
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.remember
@@ -69,6 +70,22 @@ import androidx.media3.ui.TrackSelectionDialogBuilder
 import androidx.navigation.NavController
 import com.filmvault.app.di.AppModule
 import android.widget.Toast
+
+private fun applyPlayerImmersiveMode(activity: android.app.Activity?, view: android.view.View) {
+    val window = activity?.window ?: return
+    WindowCompat.setDecorFitsSystemWindows(window, false)
+    WindowCompat.getInsetsController(window, view).apply {
+        systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        hide(WindowInsetsCompat.Type.systemBars())
+    }
+    @Suppress("DEPRECATION")
+    view.systemUiVisibility = android.view.View.SYSTEM_UI_FLAG_LAYOUT_STABLE or
+        android.view.View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
+        android.view.View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION or
+        android.view.View.SYSTEM_UI_FLAG_FULLSCREEN or
+        android.view.View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
+        android.view.View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+}
 
 /**
  * 原生播放器（Media3 ExoPlayer）。用于直接视频直链（m3u8 / mp4 / dash）。
@@ -187,12 +204,14 @@ fun PlayerScreen(
             window.setSoftInputMode(android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_NOTHING)
             window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         }
-        controller?.let {
-            it.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-            it.hide(WindowInsetsCompat.Type.systemBars())
-        }
+        applyPlayerImmersiveMode(activity, view)
+        // 华为设备在弹出工具菜单时可能重新派发系统栏 Insets。播放器不使用这些
+        // Insets 做布局，因此直接消费，确保底部控制面板仍锚定在同一窗口坐标。
+        ViewCompat.setOnApplyWindowInsetsListener(view) { _, _ -> WindowInsetsCompat.CONSUMED }
+        view.requestApplyInsets()
         activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
         onDispose {
+            ViewCompat.setOnApplyWindowInsetsListener(view, null)
             controller?.show(WindowInsetsCompat.Type.systemBars())
             // 恢复进入播放器前的方向，避免手机/平板返回时因方向重建出现空白页。
             activity?.requestedOrientation = previousOrientation
@@ -204,6 +223,15 @@ fun PlayerScreen(
                 window.navigationBarColor = android.graphics.Color.TRANSPARENT
             }
             player.release()
+        }
+    }
+
+    // 菜单/弹层切换是华为横屏下最容易触发系统栏重新计算的时机，待弹层完成布局
+    // 后再次保持沉浸模式，避免底部面板出现一次性跳动。
+    androidx.compose.runtime.LaunchedEffect(playlistExpanded, speedMenuExpanded, fullscreen) {
+        if (fullscreen) {
+            delay(80)
+            applyPlayerImmersiveMode(activity, view)
         }
     }
 
