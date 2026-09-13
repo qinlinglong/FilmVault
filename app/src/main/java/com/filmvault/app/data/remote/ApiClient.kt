@@ -27,12 +27,14 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.FormBody
+import okhttp3.ConnectionSpec
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
+import okhttp3.TlsVersion
 import java.io.IOException
 import java.util.concurrent.TimeUnit
 
@@ -52,6 +54,14 @@ class ApiClient(context: Context, private val siteSettings: SiteSettingsStore) {
     private val client = OkHttpClient.Builder()
         .cookieJar(cookieJar)
         .followRedirects(true)
+        // 部分 Android 设备对服务端 TLS 1.3 协商不稳定，优先使用兼容性更好的 TLS 1.2。
+        // 仍由系统证书链严格校验证书，不关闭 hostname / certificate 校验。
+        .connectionSpecs(listOf(
+            ConnectionSpec.Builder(ConnectionSpec.MODERN_TLS)
+                .tlsVersions(TlsVersion.TLS_1_2)
+                .build(),
+        ))
+        .retryOnConnectionFailure(true)
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(20, TimeUnit.SECONDS)
         .writeTimeout(20, TimeUnit.SECONDS)
