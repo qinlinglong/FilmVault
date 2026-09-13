@@ -157,7 +157,13 @@ fun DetailScreen(nav: NavController, dir: String, id: String) {
                                 AppModule.repository.resolvePlayUrl(line.id, episode)
                             }.getOrNull()
                             if (directUrl != null) {
-                                nav.navigate("player/${Uri.encode(directUrl)}")
+                                nav.navigate(
+                                    "player/${Uri.encode(directUrl)}" +
+                                        "?lineId=${Uri.encode(line.id)}" +
+                                        "&episode=$episode" +
+                                        "&episodeCount=${line.episodes.size}" +
+                                        "&lineName=${Uri.encode(line.name)}",
+                                )
                             } else {
                                 Toast.makeText(context, "未解析到直链，已尝试打开在线播放页", Toast.LENGTH_SHORT).show()
                                 Playback.openUrl(context, "${AppModule.siteSettings.siteUrlNow}/py/${line.id}/$episode")

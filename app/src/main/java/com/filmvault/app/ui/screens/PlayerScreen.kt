@@ -29,6 +29,9 @@ import androidx.compose.material.icons.filled.Brightness6
 import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material.icons.filled.Subtitles
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.PlaylistPlay
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
@@ -47,6 +50,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
@@ -61,13 +65,22 @@ import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
 import androidx.media3.ui.PlayerView
 import androidx.media3.ui.TrackSelectionDialogBuilder
 import androidx.navigation.NavController
+import com.filmvault.app.di.AppModule
+import android.widget.Toast
 
 /**
  * 原生播放器（Media3 ExoPlayer）。用于直接视频直链（m3u8 / mp4 / dash）。
  * 在线路解析出直链后进入此原生播放器，全程不依赖 WebView。
  */
 @Composable
-fun PlayerScreen(nav: NavController, url: String) {
+fun PlayerScreen(
+    nav: NavController,
+    url: String,
+    lineId: String = "",
+    startEpisode: Int = 1,
+    episodeCount: Int = 1,
+    lineName: String = "",
+) {
     val context = LocalContext.current
     val view = LocalView.current
     var locked by remember { mutableStateOf(false) }
@@ -80,6 +93,13 @@ fun PlayerScreen(nav: NavController, url: String) {
     val audioManager = remember { context.getSystemService(AudioManager::class.java) }
     val trackSelector = remember { DefaultTrackSelector(context) }
     var tracks by remember { mutableStateOf(Tracks.EMPTY) }
+    var currentEpisode by remember { mutableStateOf(startEpisode.coerceIn(1, episodeCount.coerceAtLeast(1))) }
+    var playlistExpanded by remember { mutableStateOf(false) }
+    var switchingEpisode by remember { mutableStateOf(false) }
+    val episodeTotal = episodeCount.coerceAtLeast(1)
+    val playerScope = rememberCoroutineScope()
+    val currentEpisodeState by rememberUpdatedState(currentEpisode)
+    val switchingEpisodeState by rememberUpdatedState(switchingEpisode)
     val player = remember {
         ExoPlayer.Builder(context).setTrackSelector(trackSelector).build().apply {
             setMediaItem(MediaItem.fromUri(url))
@@ -88,10 +108,35 @@ fun PlayerScreen(nav: NavController, url: String) {
         }
     }
 
+    fun switchEpisode(episode: Int) {
+        if (switchingEpisodeState || episode !in 1..episodeTotal || lineId.isBlank()) return
+        switchingEpisode = true
+        playerScope.launch {
+            try {
+                val nextUrl = AppModule.repository.resolvePlayUrl(lineId, episode)
+                if (nextUrl.isNullOrBlank()) {
+                    Toast.makeText(context, "第${episode}集暂未解析到播放地址", Toast.LENGTH_SHORT).show()
+                } else {
+                    currentEpisode = episode
+                    player.setMediaItem(MediaItem.fromUri(nextUrl), true)
+                    player.prepare()
+                    player.playWhenReady = true
+                }
+            } finally {
+                switchingEpisode = false
+            }
+        }
+    }
+
     DisposableEffect(player) {
         val listener = object : androidx.media3.common.Player.Listener {
             override fun onTracksChanged(value: Tracks) { tracks = value }
             override fun onIsPlayingChanged(value: Boolean) { isPlaying = value }
+            override fun onPlaybackStateChanged(state: Int) {
+                if (state == androidx.media3.common.Player.STATE_ENDED && currentEpisodeState < episodeTotal && lineId.isNotBlank()) {
+                    switchEpisode(currentEpisodeState + 1)
+                }
+            }
         }
         player.addListener(listener)
         onDispose { player.removeListener(listener) }
@@ -225,6 +270,31 @@ fun PlayerScreen(nav: NavController, url: String) {
                 }
                 // 设置类操作紧挨右下角全屏按钮，便于单手操作。
                 Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (episodeTotal > 1 && lineId.isNotBlank()) {
+                        Box {
+                            IconButton(onClick = { playlistExpanded = true }) {
+                                Icon(
+                                    Icons.Default.PlaylistPlay,
+                                    contentDescription = if (lineName.isBlank()) "播放清单" else "播放清单：$lineName",
+                                    tint = Color.White,
+                                )
+                            }
+                            DropdownMenu(
+                                expanded = playlistExpanded,
+                                onDismissRequest = { playlistExpanded = false },
+                            ) {
+                                (1..episodeTotal).forEach { episode ->
+                                    DropdownMenuItem(
+                                        text = { Text(if (episode == currentEpisode) "第${episode}集（播放中）" else "第${episode}集") },
+                                        onClick = {
+                                            playlistExpanded = false
+                                            if (episode != currentEpisode) switchEpisode(episode)
+                                        },
+                                    )
+                                }
+                            }
+                        }
+                    }
                     if (tracks.groups.any { it.type == C.TRACK_TYPE_TEXT }) {
                         IconButton(
                             onClick = { TrackSelectionDialogBuilder(context, "选择字幕", player, C.TRACK_TYPE_TEXT).build().show() },
