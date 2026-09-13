@@ -96,10 +96,14 @@ fun PlayerScreen(
     var currentEpisode by remember { mutableStateOf(startEpisode.coerceIn(1, episodeCount.coerceAtLeast(1))) }
     var playlistExpanded by remember { mutableStateOf(false) }
     var switchingEpisode by remember { mutableStateOf(false) }
+    var exiting by remember { mutableStateOf(false) }
     val episodeTotal = episodeCount.coerceAtLeast(1)
     val playerScope = rememberCoroutineScope()
     val currentEpisodeState by rememberUpdatedState(currentEpisode)
     val switchingEpisodeState by rememberUpdatedState(switchingEpisode)
+    val previousOrientation = remember {
+        activity?.requestedOrientation ?: ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+    }
     val player = remember {
         ExoPlayer.Builder(context).setTrackSelector(trackSelector).build().apply {
             setMediaItem(MediaItem.fromUri(url))
@@ -156,14 +160,25 @@ fun PlayerScreen(
         activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
         onDispose {
             controller?.show(WindowInsetsCompat.Type.systemBars())
-            activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+            // 恢复进入播放器前的方向，避免手机/平板返回时因方向重建出现空白页。
+            activity?.requestedOrientation = previousOrientation
             window?.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-            if (window != null) WindowCompat.setDecorFitsSystemWindows(window, false)
+            if (window != null) {
+                WindowCompat.setDecorFitsSystemWindows(window, false)
+                window.statusBarColor = android.graphics.Color.TRANSPARENT
+                window.navigationBarColor = android.graphics.Color.TRANSPARENT
+            }
             player.release()
         }
     }
 
-    BackHandler { nav.popBackStack() }
+    fun exitPlayer() {
+        if (exiting) return
+        exiting = true
+        nav.popBackStack()
+    }
+
+    BackHandler { exitPlayer() }
     Box(Modifier.fillMaxSize().background(Color.Black)) {
         AndroidView(
             modifier = Modifier.fillMaxSize(),
@@ -334,7 +349,7 @@ fun PlayerScreen(
         }
         // 返回按钮固定在左上角，符合横屏播放器的常见布局，锁定时仍可退出播放器。
         IconButton(
-            onClick = { nav.popBackStack() },
+            onClick = { exitPlayer() },
             modifier = Modifier.align(Alignment.TopStart).padding(top = 16.dp, start = 16.dp),
         ) {
             Icon(Icons.Default.ArrowBack, contentDescription = "返回", tint = Color.White)
