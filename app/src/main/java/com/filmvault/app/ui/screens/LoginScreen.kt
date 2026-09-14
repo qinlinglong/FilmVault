@@ -129,7 +129,7 @@ fun LoginScreen(nav: NavController, vm: AuthViewModel = viewModel()) {
                                 Modifier.fillMaxWidth().height(200.dp)
                                     .background(MaterialTheme.colorScheme.surfaceVariant)
                                     .onSizeChanged { captchaWidthPx = it.width.coerceAtLeast(1) }
-                                    .pointerInput(dataUri, vm.captchaTarget) {
+                                    .pointerInput(dataUri, vm.captchaTarget, captchaWidthPx) {
                                         detectTapGestures { offset ->
                                             vm.addCaptchaTap(
                                                 (offset.x / captchaWidthPx * 350f).toInt(),
@@ -142,13 +142,6 @@ fun LoginScreen(nav: NavController, vm: AuthViewModel = viewModel()) {
                             }
                         } else Text("验证码图片加载失败，请点击换一张")
                     }
-                    OutlinedTextField(
-                        value = vm.captcha,
-                        onValueChange = { vm.captcha = it },
-                        label = { Text("普通验证码（如有）") },
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth(),
-                    )
                     Button(onClick = { vm.refreshCaptcha() }, modifier = Modifier.fillMaxWidth()) {
                         Text("换一张验证码")
                     }
