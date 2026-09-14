@@ -337,12 +337,34 @@ fun PlayerScreen(
                     // 工具栏分离。PlayerView 这里只负责视频画面。
                     useController = false
 
-                    // 手势直接挂在 PlayerView 上。普通点击切换统一控制面板，竖向滑动
-                    // 保留亮度/音量调节。
+                    // 手势直接挂在 PlayerView 上：单击切换控制栏，双击暂停/播放，
+                    // 长按后左右滑动快退/快进，竖向滑动调节亮度/音量。
                     var startX = 0f
                     var startY = 0f
                     var startBrightness = 0.5f
                     var startVolume = 0
+                    var lastTapAt = 0L
+                    var lastTapX = 0f
+                    var lastTapY = 0f
+                    var moved = false
+                    var longPressActive = false
+                    var horizontalSeeking = false
+                    var seekStartPosition = 0L
+                    var seekDeltaMs = 0L
+                    var longPressTask: Runnable? = null
+                    var singleTapTask: Runnable? = null
+
+                    fun scheduleGestureHintClear() {
+                        gestureScope.launch {
+                            delay(900)
+                            gestureHint = null
+                        }
+                    }
+
+                    fun showGestureHint(text: String) {
+                        gestureHint = text
+                        scheduleGestureHintClear()
+                    }
 
                     fun updateGestureValue(deltaY: Float, touchX: Float, viewWidth: Int) {
                         if (touchX < viewWidth / 2f) {
@@ -362,43 +384,129 @@ fun PlayerScreen(
                     setOnTouchListener { playerView, event ->
                         when (event.actionMasked) {
                             MotionEvent.ACTION_DOWN -> {
+                                longPressTask?.let(playerView::removeCallbacks)
+                                singleTapTask?.let(playerView::removeCallbacks)
                                 startX = event.x
                                 startY = event.y
+                                moved = false
+                                longPressActive = false
+                                horizontalSeeking = false
+                                seekDeltaMs = 0L
                                 startBrightness = activity?.window?.attributes?.screenBrightness
                                     ?.takeIf { it >= 0f } ?: 0.5f
                                 startVolume = audioManager?.getStreamVolume(AudioManager.STREAM_MUSIC) ?: 0
+                                longPressTask = Runnable {
+                                    if (!locked && !moved) {
+                                        longPressActive = true
+                                        seekStartPosition = player.currentPosition.coerceAtLeast(0L)
+                                        showGestureHint("长按左右滑动快进/快退")
+                                    }
+                                }.also { playerView.postDelayed(it, 450L) }
                             }
                             MotionEvent.ACTION_MOVE -> {
+                                val deltaX = event.x - startX
                                 val deltaY = startY - event.y
+                                if (kotlin.math.abs(deltaX) >= 20f || kotlin.math.abs(deltaY) >= 20f) {
+                                    moved = true
+                                }
+                                if (longPressActive && kotlin.math.abs(deltaX) > kotlin.math.abs(deltaY) * 1.1f) {
+                                    horizontalSeeking = true
+                                    seekDeltaMs = (deltaX / playerView.width.coerceAtLeast(1) * 120_000L).toLong()
+                                    val preview = (seekStartPosition + seekDeltaMs).coerceAtLeast(0L)
+                                    val direction = if (seekDeltaMs >= 0L) "快进" else "快退"
+                                    showGestureHint("$direction ${formatDuration(kotlin.math.abs(seekDeltaMs))}")
+                                    player.seekTo(preview)
+                                    return@setOnTouchListener true
+                                }
                                 val isVerticalGesture = kotlin.math.abs(deltaY) >= 30f &&
-                                    kotlin.math.abs(deltaY) > kotlin.math.abs(startX - event.x) * 1.2f
+                                    kotlin.math.abs(deltaY) > kotlin.math.abs(deltaX) * 1.2f
                                 if (isVerticalGesture) {
+                                    longPressTask?.let(playerView::removeCallbacks)
                                     // 移动过程中实时更新系统值和提示，不再等到抬手后才显示结果。
                                     updateGestureValue(deltaY, startX, playerView.width)
                                 }
                             }
                             MotionEvent.ACTION_UP -> {
+                                longPressTask?.let(playerView::removeCallbacks)
+                                longPressTask = null
+                                val now = android.os.SystemClock.uptimeMillis()
+                                val deltaX = event.x - startX
                                 val deltaY = startY - event.y
                                 val isVerticalGesture = kotlin.math.abs(deltaY) >= 80f &&
-                                    kotlin.math.abs(deltaY) > kotlin.math.abs(startX - event.x) * 1.2f
-                                if (isVerticalGesture) {
+                                    kotlin.math.abs(deltaY) > kotlin.math.abs(deltaX) * 1.2f
+                                if (horizontalSeeking) {
+                                    player.seekTo((seekStartPosition + seekDeltaMs).coerceAtLeast(0L))
+                                    showGestureHint(if (seekDeltaMs >= 0L) "快进完成" else "快退完成")
+                                    lastTapAt = 0L
+                                } else if (isVerticalGesture) {
                                     updateGestureValue(deltaY, startX, playerView.width)
-                                    gestureScope.launch {
-                                        delay(900)
-                                        gestureHint = null
-                                    }
+                                    scheduleGestureHintClear()
+                                    lastTapAt = 0L
                                 } else if (!locked) {
-                                    controlsVisible = !controlsVisible
+                                    val isDoubleTap = now - lastTapAt in 1..300L &&
+                                        kotlin.math.abs(event.x - lastTapX) < 80f &&
+                                        kotlin.math.abs(event.y - lastTapY) < 80f
+                                    if (isDoubleTap) {
+                                        singleTapTask?.let(playerView::removeCallbacks)
+                                        singleTapTask = null
+                                        if (player.isPlaying) player.pause() else player.play()
+                                        lastTapAt = 0L
+                                    } else {
+                                        lastTapAt = now
+                                        lastTapX = event.x
+                                        lastTapY = event.y
+                                        singleTapTask = Runnable {
+                                            if (!locked) controlsVisible = !controlsVisible
+                                        }.also { playerView.postDelayed(it, 300L) }
+                                    }
                                 }
+                                moved = false
+                                horizontalSeeking = false
                             }
                             MotionEvent.ACTION_CANCEL -> {
+                                longPressTask?.let(playerView::removeCallbacks)
+                                longPressTask = null
+                                singleTapTask?.let(playerView::removeCallbacks)
+                                singleTapTask = null
                                 startX = 0f
                                 startY = 0f
+                                moved = false
+                                horizontalSeeking = false
                             }
                         }
                         // 背景点击/手势由本监听器消费，控制面板上的 Compose 子控件仍可
                         // 正常接收自己的点击和拖动事件。
                         true
+                    }
+
+                    isFocusable = true
+                    isFocusableInTouchMode = true
+                    requestFocus()
+                    setOnKeyListener { _, keyCode, event ->
+                        if (locked || event.action != android.view.KeyEvent.ACTION_DOWN) return@setOnKeyListener false
+                        when (keyCode) {
+                            android.view.KeyEvent.KEYCODE_DPAD_LEFT,
+                            android.view.KeyEvent.KEYCODE_MEDIA_REWIND -> {
+                                player.seekTo((player.currentPosition - 10_000L).coerceAtLeast(0L))
+                                showGestureHint("快退 00:10")
+                                true
+                            }
+                            android.view.KeyEvent.KEYCODE_DPAD_RIGHT,
+                            android.view.KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> {
+                                val target = (player.currentPosition + 10_000L).coerceAtMost(
+                                    player.duration.takeIf { it > 0L } ?: Long.MAX_VALUE,
+                                )
+                                player.seekTo(target)
+                                showGestureHint("快进 00:10")
+                                true
+                            }
+                            android.view.KeyEvent.KEYCODE_SPACE,
+                            android.view.KeyEvent.KEYCODE_ENTER -> {
+                                if (player.isPlaying) player.pause() else player.play()
+                                true
+                            }
+                            else -> false
+                        }
                     }
                 }
             },
