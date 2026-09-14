@@ -1,14 +1,16 @@
-# 影库 FilmVault —— 原生安卓客户端
+# 影库 FilmVault —— 通用视频资源壳 App
 
-把目标影视站点（电影 / 剧集 / 动漫）做成的**纯原生 Android App**，
-使用 **Kotlin + Jetpack Compose** 从头实现，**全程无任何 WebView 套壳**。
+FilmVault 是一个**通用的原生 Android 视频资源仓库壳应用**，用于连接用户自行配置的模块化资源仓库，提供登录、分类浏览、搜索、详情查看、收藏、观看历史和在线播放等能力。
 
-> 注意：本项目仅为该站点的**个人原生客户端**，账号信息由用户提供，所有数据均来自站点公开接口。
-> 站点本身带有 `filejin` 反爬体系（PoW 验证 + 登录态），本应用已在网络层完整复刻。
+项目使用 **Kotlin + Jetpack Compose + Media3** 构建，**不使用 WebView 套壳**。它本身不是影视资源平台，也不内置固定站点地址或任何影视资源。
+
+> 本项目只提供通用的客户端壳和模块化接入能力。用户需要自行配置兼容的资源仓库，资源内容、第三方链接、版权和使用责任均由资源提供方及使用者承担。
 
 作者：`qinlinglong`
 
-当前版本：`1.0.17` · [下载最新 Release](https://github.com/qinlinglong/FilmVault/releases/tag/v1.0.17)
+仓库地址：[github.com/qinlinglong/FilmVault](https://github.com/qinlinglong/FilmVault)
+
+当前版本：`1.0.27` · [下载最新 Release](https://github.com/qinlinglong/FilmVault/releases/tag/v1.0.27)
 
 本 App 是一个模块化影视仓库与信息聚合工具，不提供、存储、上传或分发任何影视资源。内容与第三方链接来自用户配置的站点或相关服务，版权及使用责任归原权利人和使用者。
 
@@ -49,7 +51,9 @@ BT 客户端 / 网盘 App 处理；在线播放线路则在 App 内使用 Media3
 
 ---
 
-## 二、逆向得到的接口（已内置在 `ApiClient.kt`）
+## 二、模块化仓库接口适配示例
+
+当前实现包含一套模块化影视仓库的接口适配示例，相关网络逻辑集中在 `ApiClient.kt`，便于替换为其他兼容仓库或扩展新的资源模块。以下接口仅代表当前适配协议，不属于 FilmVault 自身提供的内容：
 
 | 功能 | 接口 | 说明 |
 |------|------|------|
