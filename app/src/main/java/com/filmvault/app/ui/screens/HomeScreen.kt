@@ -30,6 +30,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import com.filmvault.app.data.model.MovieItem
@@ -56,7 +58,15 @@ fun HomeScreen(nav: NavController) {
                 Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text("影库", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(start = 8.dp))
+                // 标题没有业务点击动作，主动消费连续点击，避免事件落到页面层造成
+                // 首页状态异常或出现只有背景色的空屏。
+                Text(
+                    "影库",
+                    style = MaterialTheme.typography.titleLarge,
+                    modifier = Modifier.padding(start = 8.dp).pointerInput(Unit) {
+                        detectTapGestures { }
+                    },
+                )
                 Spacer(Modifier.weight(1f))
                 IconButton(onClick = { nav.navigate("search") }) { Icon(Icons.Default.Search, contentDescription = "搜索") }
                 IconButton(onClick = { nav.navigate("library") }) { Icon(Icons.Default.Star, contentDescription = "收藏/历史") }
@@ -90,6 +100,14 @@ private fun HomeSection(title: String, dir: String, items: List<MovieItem>, isLo
             Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text(error, color = MaterialTheme.colorScheme.error, modifier = Modifier.weight(1f))
                 TextButton(onClick = onRetry) { Text("重试") }
+            }
+        } else if (items.isEmpty()) {
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("暂无内容", modifier = Modifier.weight(1f))
+                TextButton(onClick = onRetry) { Text("刷新") }
             }
         } else {
             PosterPrefetch(items.take(12))

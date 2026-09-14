@@ -306,10 +306,16 @@ fun PlayerScreen(
     fun exitPlayer() {
         if (exiting) return
         exiting = true
+        // 先撤掉播放器交互层，再执行导航，避免快速连点继续命中旧页面的返回控件。
+        locked = true
+        controlsVisible = false
+        playlistExpanded = false
+        speedMenuExpanded = false
+        trackMenuType = null
         nav.popBackStack()
     }
 
-    BackHandler { exitPlayer() }
+    BackHandler(enabled = !exiting) { exitPlayer() }
     Box(Modifier.fillMaxSize().background(Color.Black)) {
         AndroidView(
             modifier = Modifier.fillMaxSize(),
@@ -631,6 +637,7 @@ fun PlayerScreen(
         // 返回按钮固定在左上角，符合横屏播放器的常见布局，锁定时仍可退出播放器。
         IconButton(
             onClick = { exitPlayer() },
+            enabled = !exiting,
             modifier = Modifier.align(Alignment.TopStart).padding(top = 16.dp, start = 16.dp),
         ) {
             Icon(Icons.Default.ArrowBack, contentDescription = "返回", tint = Color.White)
