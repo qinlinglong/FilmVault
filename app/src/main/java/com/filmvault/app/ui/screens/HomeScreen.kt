@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -53,7 +54,10 @@ fun HomeScreen(nav: NavController) {
     }
 
     Column(Modifier.fillMaxSize()) {
-        Surface(shadowElevation = 4.dp) {
+        Surface(
+            modifier = Modifier.fillMaxWidth().statusBarsPadding(),
+            shadowElevation = 4.dp,
+        ) {
             Row(
                 Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
