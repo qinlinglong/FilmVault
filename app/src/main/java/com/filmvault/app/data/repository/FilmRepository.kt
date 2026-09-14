@@ -56,7 +56,7 @@ class FilmRepository(
 
     /** 收藏：本地 + 服务器双向写入 */
     suspend fun addFavorite(item: MovieItem) {
-        favStore.add(FavEntry(item.id, item.dir, item.title, item.year, item.rating, item.quality))
+        favStore.add(FavEntry(item.id, item.dir, item.title, item.year, item.rating, item.quality, item.posterUrl))
         api.addFavorite(item.dir, item.id)
     }
 

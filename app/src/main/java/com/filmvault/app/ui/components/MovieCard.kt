@@ -38,8 +38,6 @@ import coil.imageLoader
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.filmvault.app.data.model.MovieItem
-import com.filmvault.app.di.AppModule
-import com.filmvault.app.util.posterUrl
 
 @Composable
 fun PosterGrid(
@@ -49,8 +47,7 @@ fun PosterGrid(
     state: LazyGridState = androidx.compose.foundation.lazy.grid.rememberLazyGridState(),
     onNearEnd: (() -> Unit)? = null,
 ) {
-    val posterBaseUrl = AppModule.siteSettings.siteUrlNow
-    PosterPrefetch(items, posterBaseUrl)
+    PosterPrefetch(items)
     LaunchedEffect(state, items.size, onNearEnd) {
         if (onNearEnd == null) return@LaunchedEffect
         snapshotFlow { state.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1 }
@@ -67,7 +64,7 @@ fun PosterGrid(
         modifier = modifier.fillMaxWidth(),
     ) {
         items(items, key = { "${it.dir}/${it.id}" }) { item ->
-            MovieCard(item = item, posterBaseUrl = posterBaseUrl, modifier = Modifier.fillMaxWidth(), onClick = { onItemClick(item) })
+            MovieCard(item = item, modifier = Modifier.fillMaxWidth(), onClick = { onItemClick(item) })
         }
     }
 }
@@ -77,10 +74,10 @@ fun PosterGrid(
  * 列表数据到达后提前把海报交给 Coil 队列，滚动到卡片时直接从缓存读取，减少逐张出现。
  */
 @Composable
-fun PosterPrefetch(items: List<MovieItem>, posterBaseUrl: String) {
+fun PosterPrefetch(items: List<MovieItem>) {
     val context = LocalContext.current
     // 只预取首屏附近的内容，避免一次性占满连接和解码队列。
-    val urls = items.mapNotNull { posterUrl(posterBaseUrl, it.dir, it.id) }.distinct().take(12)
+    val urls = items.mapNotNull { it.posterUrl }.distinct().take(12)
     LaunchedEffect(urls) {
         urls.forEach { url ->
             context.imageLoader.enqueue(
@@ -96,7 +93,6 @@ fun PosterPrefetch(items: List<MovieItem>, posterBaseUrl: String) {
 @Composable
 fun MovieCard(
     item: MovieItem,
-    posterBaseUrl: String = AppModule.siteSettings.siteUrlNow,
     modifier: Modifier = Modifier,
     onClick: () -> Unit,
 ) {
@@ -110,7 +106,7 @@ fun MovieCard(
     ) {
         Box {
             PosterImage(
-                url = posterUrl(posterBaseUrl, item.dir, item.id),
+                url = item.posterUrl,
                 contentDescription = item.title,
                 modifier = Modifier
                     .fillMaxWidth()

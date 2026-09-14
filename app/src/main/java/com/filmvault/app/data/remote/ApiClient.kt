@@ -67,6 +67,8 @@ class ApiClient(context: Context, private val siteSettings: SiteSettingsStore) {
         .build()
     private val verificationMutex = Mutex()
     private var verificationGeneration = 0L
+    private var posterTemplate: String? = null
+    private val posterByItem = mutableMapOf<String, String>()
 
     /** 当前站点地址（运行时从配置读取，支持随时切换）。 */
     private val baseUrl: String get() = siteSettings.siteUrlNow
@@ -197,6 +199,7 @@ class ApiClient(context: Context, private val siteSettings: SiteSettingsStore) {
         query: Map<String, String> = emptyMap()
     ): Pair<List<MovieItem>, Int> = withContext(Dispatchers.IO) {
         ensureVerified()
+        discoverPosterTemplate()
         val urlBuilder = "${baseUrl}/res/$dir".toHttpUrl().newBuilder()
             .addQueryParameter("page", page.toString())
         query.forEach { (k, v) -> if (v.isNotBlank()) urlBuilder.addQueryParameter(k, v) }
@@ -210,6 +213,7 @@ class ApiClient(context: Context, private val siteSettings: SiteSettingsStore) {
     /** 搜索。 */
     suspend fun search(q: String, page: Int = 1, type: String = "", mode: String = "1"): Pair<List<MovieItem>, Int> = withContext(Dispatchers.IO) {
         ensureVerified()
+        discoverPosterTemplate()
         val url = "${baseUrl}/res/search".toHttpUrl().newBuilder()
             .addQueryParameter("q", q)
             .addQueryParameter("page", page.toString())
@@ -232,6 +236,7 @@ class ApiClient(context: Context, private val siteSettings: SiteSettingsStore) {
     }
 
     private fun parseHomeHtml(html: String): Map<String, List<MovieItem>> {
+        extractPosterMap(html)
         val marker = "_obj.inlist="
         val start = html.indexOf(marker)
         if (start < 0) return emptyMap()
@@ -263,6 +268,7 @@ class ApiClient(context: Context, private val siteSettings: SiteSettingsStore) {
             .header("Accept", "text/html,application/xhtml+xml")
             .build()
         val html = requestTextWithVerification { client.newCall(request).execute() }
+        extractPosterMap(html)
         parseHotHtml(html, dir)
     }
 
@@ -293,6 +299,8 @@ class ApiClient(context: Context, private val siteSettings: SiteSettingsStore) {
         val imArr = inlist["im"]?.jsonArray
         val qArr = inlist["q"]?.jsonArray
         val gArr = inlist["g"]?.jsonArray
+        val posterArr = listOf("poster", "posters", "img", "image", "cover", "pic", "p")
+            .firstNotNullOfOrNull { key -> inlist[key] as? JsonArray }
 
         val result = mutableListOf<MovieItem>()
         for (k in iArr.indices) {
@@ -315,7 +323,10 @@ class ApiClient(context: Context, private val siteSettings: SiteSettingsStore) {
                 MovieItem(
                     id = id, dir = itemDir, title = title, year = year,
                     rating = rating, imdb = imdb, quality = quality,
-                    status = status, regionCode = regionCode, genreCodes = genreCodes
+                    status = status, regionCode = regionCode, genreCodes = genreCodes,
+                    posterUrl = resolveImageUrl(posterArr?.getOrNull(k)?.jsonPrimitive?.content)
+                        ?: posterByItem["$itemDir/$id"]
+                        ?: posterTemplate?.replace("{dir}", itemDir)?.replace("{id}", id),
                 )
             )
         }
@@ -323,6 +334,7 @@ class ApiClient(context: Context, private val siteSettings: SiteSettingsStore) {
     }
 
     private fun parseHotHtml(html: String, dir: String): List<MovieItem> {
+        extractPosterMap(html)
         // 热门页优先复用网页内嵌的列存数据，保证排序和网页端一致。
         Regex("(?:(?:_obj|window)\\.)?inlist\\s*=\\s*").findAll(html).forEach { marker ->
             val objectStart = html.indexOf('{', marker.range.last + 1)
@@ -389,6 +401,7 @@ class ApiClient(context: Context, private val siteSettings: SiteSettingsStore) {
             val html = requestTextWithVerification {
                 client.newCall(Request.Builder().url("${baseUrl}/$dir/$id").build()).execute()
             }
+            extractPosterMap(html)
             parseDetailMeta(html, dir, id, fallbackTitle)
         }
 
@@ -422,6 +435,7 @@ class ApiClient(context: Context, private val siteSettings: SiteSettingsStore) {
                 summary = str("summary"),
                 cast = strList("zhuyan"),
                 episodes = eps,
+                posterUrl = extractImageUrl(html),
             )
         } catch (_: Exception) {
             DetailMeta(id = id, dir = dir, title = fallbackTitle)
@@ -459,6 +473,80 @@ class ApiClient(context: Context, private val siteSettings: SiteSettingsStore) {
         }
         if (end < 0) return null
         return html.substring(start, end + 1)
+    }
+
+    /** 从网页/API 的原始数据中提取封面地址，客户端不预置任何 CDN 域名。 */
+    private fun extractImageUrl(html: String): String? {
+        val candidates = buildList {
+            val attrPattern = Regex(
+                """<(?:img|source)\b[^>]*(?:src|data-src|data-original|srcset)\s*=\s*[\"']([^\"']+)[\"']""",
+                RegexOption.IGNORE_CASE,
+            )
+            attrPattern.findAll(html).forEach { add(it.groupValues[1].substringBefore(',')) }
+            val jsonPattern = Regex(
+                """[\"'](?:poster|cover|image|img|pic)[\"']\s*:\s*[\"']([^\"']+)[\"']""",
+                RegexOption.IGNORE_CASE,
+            )
+            jsonPattern.findAll(html).forEach { add(it.groupValues[1]) }
+        }
+        return candidates
+            .mapNotNull(::resolveImageUrl)
+            .firstOrNull { value ->
+                val path = value.substringBefore('?').lowercase()
+                path.contains("/img/") || path.contains("/poster") || path.contains("/cover") ||
+                    path.endsWith(".jpg") || path.endsWith(".jpeg") || path.endsWith(".png") || path.endsWith(".webp")
+            }
+    }
+
+    /** 从网页卡片的 href 与 img 标签建立影片到封面的映射，并学习站点的图片路径模板。 */
+    private fun extractPosterMap(html: String) {
+        val cardPattern = Regex(
+            """<a\b[^>]+href=[\"']/?(mv|tv|ac)/([^\"'/?#]+)[\"'][^>]*>(.*?)</a>""",
+            setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL),
+        )
+        val imagePattern = Regex(
+            """<(?:img|source)\b[^>]*(?:src|data-src|data-original|srcset)\s*=\s*[\"']([^\"']+)[\"']""",
+            RegexOption.IGNORE_CASE,
+        )
+        cardPattern.findAll(html).forEach { card ->
+            val dir = card.groupValues[1]
+            val id = card.groupValues[2]
+            val raw = imagePattern.find(card.groupValues[3])?.groupValues?.get(1)?.substringBefore(',')
+                ?: return@forEach
+            val resolved = resolveImageUrl(raw) ?: return@forEach
+            posterByItem["$dir/$id"] = resolved
+            learnPosterTemplate(resolved)
+        }
+    }
+
+    /** 从网页返回的真实图片地址中推导模板，后续分页无需重复请求每个详情页。 */
+    private fun learnPosterTemplate(url: String) {
+        if (posterTemplate != null) return
+        val marker = "/img/"
+        val markerIndex = url.indexOf(marker)
+        if (markerIndex < 0) return
+        val tail = url.substring(markerIndex + marker.length).split('/')
+        if (tail.size < 3) return
+        posterTemplate = url.substring(0, markerIndex) + marker + "{dir}/{id}/" + tail.drop(2).joinToString("/")
+    }
+
+    /** 首次进入分类/搜索时先从当前站点首页发现图片模板；失败不影响列表加载。 */
+    private suspend fun discoverPosterTemplate() {
+        if (posterTemplate != null || baseUrl.isBlank()) return
+        runCatching {
+            val html = requestTextWithVerification {
+                client.newCall(Request.Builder().url(baseUrl).build()).execute()
+            }
+            extractPosterMap(html)
+        }
+    }
+
+    /** 以当前站点 URL 解析网页返回的绝对、协议相对或相对图片地址。 */
+    private fun resolveImageUrl(raw: String?): String? {
+        val value = raw?.trim()?.takeIf { it.isNotBlank() && !it.startsWith("data:") } ?: return null
+        return runCatching {
+            baseUrl.toHttpUrl().resolve(value)?.toString()?.also(::learnPosterTemplate)
+        }.getOrNull()
     }
 
     /** 获取播放/下载资源总览。 */
@@ -597,7 +685,9 @@ class ApiClient(context: Context, private val siteSettings: SiteSettingsStore) {
                 val dir = o["dir"]?.jsonPrimitive?.content ?: "mv"
                 val title = o["title"]?.jsonPrimitive?.content ?: ""
                 val ep = o["s"]?.jsonPrimitive?.content?.toIntOrNull()
-                HistoryItem(id = id, dir = dir, title = title, episode = ep)
+                val poster = listOf("poster", "cover", "image", "img", "pic")
+                    .firstNotNullOfOrNull { key -> o[key]?.jsonPrimitive?.content }
+                HistoryItem(id = id, dir = dir, title = title, episode = ep, posterUrl = resolveImageUrl(poster))
             }
         } catch (_: Exception) { emptyList() }
     }

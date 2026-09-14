@@ -15,8 +15,9 @@ data class MovieItem(
     val status: String? = null, // 状态 (g)
     val regionCode: Int? = null,// 地区码 (a[1])
     val genreCodes: List<Int> = emptyList(), // 类型码 (a[2..])
-) {
-}
+    /** 网页/API 返回的原始封面地址，不在客户端写死域名。 */
+    val posterUrl: String? = null,
+)
 
 /** 详情元数据（从 /{dir}/{id} HTML 内嵌 JSON 解析） */
 data class DetailMeta(
@@ -34,8 +35,9 @@ data class DetailMeta(
     val summary: String? = null,
     val cast: List<String> = emptyList(),
     val episodes: List<EpisodeRef> = emptyList(),
-) {
-}
+    /** 从详情页 HTML/API 提取的原始封面地址。 */
+    val posterUrl: String? = null,
+)
 
 data class EpisodeRef(
     val id: String,
@@ -87,6 +89,7 @@ data class HistoryItem(
     val dir: String,
     val title: String,
     val episode: Int? = null,
+    val posterUrl: String? = null,
 )
 
 /** 登录结果 */

@@ -56,7 +56,6 @@ import com.filmvault.app.ui.components.PosterImage
 import com.filmvault.app.util.Playback
 import com.filmvault.app.viewmodel.DetailViewModel
 import kotlinx.coroutines.launch
-import com.filmvault.app.util.posterUrl
 
 @Composable
 fun DetailScreen(nav: NavController, dir: String, id: String) {
@@ -107,7 +106,7 @@ fun DetailScreen(nav: NavController, dir: String, id: String) {
             // 头部：海报 + 信息
             Row(Modifier.fillMaxWidth()) {
                 PosterImage(
-                    url = posterUrl(AppModule.siteSettings.siteUrlNow, dir, id),
+                    url = meta?.posterUrl,
                     contentDescription = null,
                     modifier = Modifier.width(if (wide) 180.dp else 110.dp).height(if (wide) 260.dp else 160.dp).clip(RoundedCornerShape(10.dp)),
                     contentScale = ContentScale.Crop,
@@ -169,7 +168,7 @@ fun DetailScreen(nav: NavController, dir: String, id: String) {
                         try {
                             // 原生播放器不会经过网页端的历史写入逻辑，先本地记录，保证立即可见。
                             AppModule.repository.recordHistory(
-                                HistoryItem(id, dir, meta?.title ?: "未命名影片", episode),
+                                HistoryItem(id, dir, meta?.title ?: "未命名影片", episode, meta?.posterUrl),
                             )
                             val directUrl = runCatching {
                                 AppModule.repository.resolvePlayUrl(line.id, episode)

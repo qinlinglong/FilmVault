@@ -284,6 +284,7 @@ class DetailViewModel(private val dir: String, private val id: String, private v
         val item = MovieItem(
             id = id, dir = dir, title = current.title, year = current.year,
             rating = null, imdb = null, quality = emptyList(), status = null,
+            posterUrl = current.posterUrl,
         )
         viewModelScope.launch {
             if (isFavorite) {

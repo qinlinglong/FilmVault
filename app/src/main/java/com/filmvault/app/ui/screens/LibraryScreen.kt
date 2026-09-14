@@ -41,7 +41,6 @@ import androidx.navigation.NavController
 import com.filmvault.app.data.model.HistoryItem
 import com.filmvault.app.di.AppModule
 import com.filmvault.app.util.FavEntry
-import com.filmvault.app.util.posterUrl
 import com.filmvault.app.viewmodel.LibraryViewModel
 import com.filmvault.app.ui.components.MainBottomBar
 import com.filmvault.app.ui.components.PosterImage
@@ -114,7 +113,7 @@ private fun FavRow(item: FavEntry, onClick: () -> Unit) {
     ) {
         Row(Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
             PosterImage(
-                url = posterUrl(AppModule.siteSettings.siteUrlNow, item.dir, item.id),
+                url = item.posterUrl,
                 contentDescription = item.title,
                 modifier = Modifier.width(56.dp).height(80.dp).clip(RoundedCornerShape(6.dp)),
                 contentScale = ContentScale.Crop,
@@ -136,7 +135,7 @@ private fun HistRow(item: HistoryItem, onClick: () -> Unit) {
     ) {
         Row(Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
             PosterImage(
-                url = posterUrl(AppModule.siteSettings.siteUrlNow, item.dir, item.id),
+                url = item.posterUrl,
                 contentDescription = item.title,
                 modifier = Modifier.width(56.dp).height(80.dp).clip(RoundedCornerShape(6.dp)),
                 contentScale = ContentScale.Crop,

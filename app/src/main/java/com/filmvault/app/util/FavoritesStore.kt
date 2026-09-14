@@ -61,4 +61,5 @@ data class FavEntry(
     val year: Int? = null,
     val rating: Double? = null,
     val quality: List<String> = emptyList(),
+    val posterUrl: String? = null,
 )

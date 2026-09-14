@@ -82,16 +82,16 @@ fun HomeScreen(nav: NavController) {
             Modifier.weight(1f).fillMaxWidth().padding(vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            item { HomeSection("最近更新的电影", "mv", vm.sections["mv"].orEmpty(), vm.isLoading, vm.error, nav, siteUrl) { vm.load(siteUrl) } }
-            item { HomeSection("最近更新的剧集", "tv", vm.sections["tv"].orEmpty(), vm.isLoading, vm.error, nav, siteUrl) { vm.load(siteUrl) } }
-            item { HomeSection("最近更新的动漫", "ac", vm.sections["ac"].orEmpty(), vm.isLoading, vm.error, nav, siteUrl) { vm.load(siteUrl) } }
+            item { HomeSection("最近更新的电影", "mv", vm.sections["mv"].orEmpty(), vm.isLoading, vm.error, nav) { vm.load(siteUrl) } }
+            item { HomeSection("最近更新的剧集", "tv", vm.sections["tv"].orEmpty(), vm.isLoading, vm.error, nav) { vm.load(siteUrl) } }
+            item { HomeSection("最近更新的动漫", "ac", vm.sections["ac"].orEmpty(), vm.isLoading, vm.error, nav) { vm.load(siteUrl) } }
         }
         MainBottomBar(nav, "home")
     }
 }
 
 @Composable
-private fun HomeSection(title: String, dir: String, items: List<MovieItem>, isLoading: Boolean, error: String?, nav: NavController, posterBaseUrl: String, onRetry: () -> Unit) {
+private fun HomeSection(title: String, dir: String, items: List<MovieItem>, isLoading: Boolean, error: String?, nav: NavController, onRetry: () -> Unit) {
     Column(Modifier.fillMaxWidth()) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(title, style = MaterialTheme.typography.titleMedium)
@@ -114,10 +114,10 @@ private fun HomeSection(title: String, dir: String, items: List<MovieItem>, isLo
                 TextButton(onClick = onRetry) { Text("刷新") }
             }
         } else {
-            PosterPrefetch(items.take(12), posterBaseUrl)
+            PosterPrefetch(items.take(12))
             LazyRow(Modifier.fillMaxWidth().padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 items(items.take(12), key = { "${it.dir}/${it.id}" }) { item ->
-                    MovieCard(item, posterBaseUrl = posterBaseUrl, modifier = Modifier.width(110.dp)) { nav.navigate("detail/${item.dir}/${item.id}") }
+                    MovieCard(item, modifier = Modifier.width(110.dp)) { nav.navigate("detail/${item.dir}/${item.id}") }
                 }
             }
         }
