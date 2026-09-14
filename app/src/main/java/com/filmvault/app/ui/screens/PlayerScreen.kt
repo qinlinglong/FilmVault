@@ -265,6 +265,17 @@ fun PlayerScreen(
         }
     }
 
+    fun seekToAndSyncProgress(target: Long) {
+        val duration = player.duration.takeIf { it > 0L } ?: Long.MAX_VALUE
+        val position = target.coerceIn(0L, duration)
+        player.seekTo(position)
+        // seekTo 的播放器回调不是同步触发，立即同步 Compose 状态，保证进度条
+        // 和时间文本跟随手势/键盘移动，不需要等待下一次轮询。
+        positionMs = position
+        durationMs = player.duration.takeIf { it > 0L } ?: durationMs
+        if (!locked) controlsVisible = true
+    }
+
     DisposableEffect(view) {
         val window = (view.context as? android.app.Activity)?.window
         val controller = window?.let { WindowCompat.getInsetsController(it, view) }
@@ -402,7 +413,7 @@ fun PlayerScreen(
                                     val preview = (seekStartPosition + seekDeltaMs).coerceAtLeast(0L)
                                     val direction = if (seekDeltaMs >= 0L) "快进" else "快退"
                                     showGestureHint("$direction ${formatDuration(kotlin.math.abs(seekDeltaMs))}")
-                                    player.seekTo(preview)
+                                    seekToAndSyncProgress(preview)
                                     return@setOnTouchListener true
                                 }
                                 val isVerticalGesture = kotlin.math.abs(deltaY) >= 30f &&
@@ -419,7 +430,7 @@ fun PlayerScreen(
                                 val isVerticalGesture = kotlin.math.abs(deltaY) >= 80f &&
                                     kotlin.math.abs(deltaY) > kotlin.math.abs(deltaX) * 1.2f
                                 if (horizontalSeeking) {
-                                    player.seekTo((seekStartPosition + seekDeltaMs).coerceAtLeast(0L))
+                                    seekToAndSyncProgress((seekStartPosition + seekDeltaMs).coerceAtLeast(0L))
                                     showGestureHint(if (seekDeltaMs >= 0L) "快进完成" else "快退完成")
                                     lastTapAt = 0L
                                 } else if (isVerticalGesture) {
@@ -467,7 +478,7 @@ fun PlayerScreen(
                         when (keyCode) {
                             android.view.KeyEvent.KEYCODE_DPAD_LEFT,
                             android.view.KeyEvent.KEYCODE_MEDIA_REWIND -> {
-                                player.seekTo((player.currentPosition - 10_000L).coerceAtLeast(0L))
+                                seekToAndSyncProgress((player.currentPosition - 10_000L).coerceAtLeast(0L))
                                 showGestureHint("快退 00:10")
                                 true
                             }
@@ -476,7 +487,7 @@ fun PlayerScreen(
                                 val target = (player.currentPosition + 10_000L).coerceAtMost(
                                     player.duration.takeIf { it > 0L } ?: Long.MAX_VALUE,
                                 )
-                                player.seekTo(target)
+                                seekToAndSyncProgress(target)
                                 showGestureHint("快进 00:10")
                                 true
                             }
@@ -748,7 +759,12 @@ fun PlayerScreen(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Icon(
-                    if (hint.startsWith("亮度")) Icons.Default.Brightness6 else Icons.Default.VolumeUp,
+                    when {
+                        hint.startsWith("亮度") -> Icons.Default.Brightness6
+                        hint.startsWith("快退") -> Icons.Default.Replay10
+                        hint.startsWith("快进") -> Icons.Default.Forward10
+                        else -> Icons.Default.VolumeUp
+                    },
                     contentDescription = null,
                     tint = Color.White,
                 )
