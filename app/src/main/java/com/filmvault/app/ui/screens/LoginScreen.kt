@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -40,7 +41,6 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.platform.LocalDensity
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import com.filmvault.app.R
@@ -49,7 +49,7 @@ import com.filmvault.app.viewmodel.AuthViewModel
 @Composable
 fun LoginScreen(nav: NavController, vm: AuthViewModel = viewModel()) {
     var captchaWidthPx by remember { mutableIntStateOf(350) }
-    val density = LocalDensity.current
+    var captchaHeightPx by remember { mutableIntStateOf(200) }
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -129,14 +129,17 @@ fun LoginScreen(nav: NavController, vm: AuthViewModel = viewModel()) {
                         }
                         if (bitmap != null) {
                             Box(
-                                Modifier.fillMaxWidth().height(200.dp)
+                                Modifier.fillMaxWidth().aspectRatio(1.75f)
                                     .background(MaterialTheme.colorScheme.surfaceVariant)
-                                    .onSizeChanged { captchaWidthPx = it.width.coerceAtLeast(1) }
-                                    .pointerInput(dataUri, vm.captchaTarget, captchaWidthPx) {
+                                    .onSizeChanged {
+                                        captchaWidthPx = it.width.coerceAtLeast(1)
+                                        captchaHeightPx = it.height.coerceAtLeast(1)
+                                    }
+                                    .pointerInput(dataUri, vm.captchaTarget, captchaWidthPx, captchaHeightPx) {
                                         detectTapGestures { offset ->
                                             vm.addCaptchaTap(
                                                 (offset.x / captchaWidthPx * 350f).toInt(),
-                                                (offset.y / with(density) { 200.dp.toPx() } * 200f).toInt(),
+                                                (offset.y / captchaHeightPx * 200f).toInt(),
                                             )
                                         }
                                     },
@@ -160,21 +163,18 @@ fun LoginScreen(nav: NavController, vm: AuthViewModel = viewModel()) {
                         Text("换一张验证码")
                     }
                     Button(
-                        onClick = { vm.verifyCaptcha() },
+                        onClick = { vm.verifyCaptcha { nav.navigate("home") { popUpTo("login") { inclusive = true } } } },
                         enabled = !vm.captchaVerified && vm.captchaPoints.size >= vm.captchaTarget.length,
                         modifier = Modifier.fillMaxWidth(),
                     ) {
-                        Text(if (vm.captchaVerified) "已验证" else "校验验证码")
+                        Text(if (vm.captchaVerified) "正在登录…" else "校验并登录")
                     }
                     if (vm.error != null) {
                         Text(vm.error!!, color = if (vm.captchaVerified) Color(0xFF2E7D32) else MaterialTheme.colorScheme.error)
                     }
                 }
             },
-            confirmButton = {
-                Button(onClick = { vm.login { nav.navigate("home") { popUpTo("login") { inclusive = true } } } },
-                    enabled = vm.captchaVerified || vm.captchaTarget.isBlank()) { Text("继续登录") }
-            },
+            confirmButton = {},
         )
     }
 }
