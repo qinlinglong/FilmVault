@@ -406,7 +406,15 @@ class ApiClient(context: Context, private val siteSettings: SiteSettingsStore) {
             }
             discoverPosterSource(html)
             extractPosterMap(html)
-            parseDetailMeta(html, dir, id, fallbackTitle)
+            val meta = parseDetailMeta(html, dir, id, fallbackTitle)
+            if (meta.posterUrl != null) {
+                meta
+            } else {
+                meta.copy(
+                    posterUrl = posterByItem["$dir/$id"]
+                        ?: posterTemplate?.replace("{dir}", dir)?.replace("{id}", id),
+                )
+            }
         }
 
     private fun parseDetailMeta(html: String, dir: String, id: String, fallbackTitle: String): DetailMeta {
