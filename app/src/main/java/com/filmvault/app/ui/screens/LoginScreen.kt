@@ -35,6 +35,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -50,6 +51,9 @@ import com.filmvault.app.viewmodel.AuthViewModel
 fun LoginScreen(nav: NavController, vm: AuthViewModel = viewModel()) {
     var captchaWidthPx by remember { mutableIntStateOf(350) }
     var captchaHeightPx by remember { mutableIntStateOf(200) }
+    val isCompactCaptcha = LocalConfiguration.current.screenWidthDp <= 600
+    val captchaCoordinateWidth = if (isCompactCaptcha) 315 else 350
+    val captchaCoordinateHeight = if (isCompactCaptcha) 180 else 200
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -138,8 +142,8 @@ fun LoginScreen(nav: NavController, vm: AuthViewModel = viewModel()) {
                                     .pointerInput(dataUri, vm.captchaTarget, captchaWidthPx, captchaHeightPx) {
                                         detectTapGestures { offset ->
                                             vm.addCaptchaTap(
-                                                (offset.x / captchaWidthPx * 350f).toInt(),
-                                                (offset.y / captchaHeightPx * 200f).toInt(),
+                                                (offset.x / captchaWidthPx * captchaCoordinateWidth).toInt(),
+                                                (offset.y / captchaHeightPx * captchaCoordinateHeight).toInt(),
                                             )
                                         }
                                     },
@@ -148,8 +152,8 @@ fun LoginScreen(nav: NavController, vm: AuthViewModel = viewModel()) {
                                 Canvas(Modifier.fillMaxSize()) {
                                     vm.captchaPoints.forEachIndexed { index, point ->
                                         val center = Offset(
-                                            point.first / 350f * size.width,
-                                            point.second / 200f * size.height,
+                                            point.first / captchaCoordinateWidth.toFloat() * size.width,
+                                            point.second / captchaCoordinateHeight.toFloat() * size.height,
                                         )
                                         drawCircle(Color(0xFF2E7D32), 15.dp.toPx(), center)
                                         drawLine(Color.White, center + Offset(-7f, 0f), center + Offset(-2f, 6f), 3.dp.toPx())
@@ -163,7 +167,7 @@ fun LoginScreen(nav: NavController, vm: AuthViewModel = viewModel()) {
                         Text("换一张验证码")
                     }
                     Button(
-                        onClick = { vm.verifyCaptcha { nav.navigate("home") { popUpTo("login") { inclusive = true } } } },
+                        onClick = { vm.verifyCaptcha(captchaCoordinateWidth, captchaCoordinateHeight) { nav.navigate("home") { popUpTo("login") { inclusive = true } } } },
                         enabled = !vm.captchaVerified && vm.captchaPoints.size >= vm.captchaTarget.length,
                         modifier = Modifier.fillMaxWidth(),
                     ) {

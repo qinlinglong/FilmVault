@@ -24,7 +24,7 @@ class FilmRepository(
 ) {
     suspend fun login(email: String, password: String, captcha: String = ""): LoginResult = api.login(email, password, captcha)
     suspend fun getCaptcha(): CaptchaChallenge = api.getCaptcha()
-    suspend fun verifyCaptcha(points: List<Pair<Int, Int>>): Boolean = api.verifyCaptcha(points)
+    suspend fun verifyCaptcha(points: List<Pair<Int, Int>>, width: Int, height: Int): Boolean = api.verifyCaptcha(points, width, height)
     fun isLoggedIn(): Boolean = api.isLoggedIn()
     fun logout() = api.logout()
 

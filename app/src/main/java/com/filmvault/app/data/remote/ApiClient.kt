@@ -219,9 +219,9 @@ class ApiClient(context: Context, private val siteSettings: SiteSettingsStore) {
     }
 
     /** 校验图片点选验证码；成功后站点会在当前会话中放行登录。 */
-    suspend fun verifyCaptcha(points: List<Pair<Int, Int>>): Boolean = withContext(Dispatchers.IO) {
+    suspend fun verifyCaptcha(points: List<Pair<Int, Int>>, width: Int, height: Int): Boolean = withContext(Dispatchers.IO) {
         ensureVerified()
-        val info = points.joinToString("-") { (x, y) -> "$x,$y" } + ";350;200"
+        val info = points.joinToString("-") { (x, y) -> "$x,$y" } + ";$width;$height"
         val response = executeWithVerification {
             client.newCall(
                 Request.Builder()
@@ -232,7 +232,8 @@ class ApiClient(context: Context, private val siteSettings: SiteSettingsStore) {
         }
         response.use {
             val root = json.parseToJsonElement(it.body?.string().orEmpty()).jsonObject
-            root["code"]?.jsonPrimitive?.content?.toIntOrNull() == 1
+            // 网页 captcha.js 使用 code == 200 表示点选成功。
+            root["code"]?.jsonPrimitive?.content?.toIntOrNull() == 200
         }
     }
 

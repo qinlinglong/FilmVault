@@ -95,11 +95,17 @@ class AuthViewModel : ViewModel() {
         captchaPoints = next
     }
 
-    fun verifyCaptcha() {
+    fun verifyCaptcha(width: Int, height: Int, onSuccess: () -> Unit = {}) {
         if (captchaVerified || captchaPoints.size < captchaTarget.length) return
         viewModelScope.launch {
-            captchaVerified = runCatching { repo.verifyCaptcha(captchaPoints) }.getOrDefault(false)
-            error = if (captchaVerified) "验证码校验通过" else "验证码校验失败，请重新点选"
+            captchaVerified = runCatching { repo.verifyCaptcha(captchaPoints, width, height) }.getOrDefault(false)
+            if (captchaVerified) {
+                error = "验证码校验通过，正在登录…"
+                captchaRequired = false
+                login(onSuccess)
+            } else {
+                error = "验证码校验失败，请重新点选"
+            }
         }
     }
 
