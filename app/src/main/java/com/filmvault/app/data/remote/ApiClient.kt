@@ -479,10 +479,15 @@ class ApiClient(context: Context, private val siteSettings: SiteSettingsStore) {
     private fun extractImageUrl(html: String): String? {
         val candidates = buildList {
             val attrPattern = Regex(
-                """<(?:img|source)\b[^>]*(?:src|data-src|data-original|srcset)\s*=\s*[\"']([^\"']+)[\"']""",
+                """<(?:img|source)\b[^>]*(?:src|data-src|data-original|data-lazy-src|data-original-src|data-url|srcset)\s*=\s*[\"']([^\"']+)[\"']""",
                 RegexOption.IGNORE_CASE,
             )
             attrPattern.findAll(html).forEach { add(it.groupValues[1].substringBefore(',')) }
+            val backgroundPattern = Regex(
+                """background-image\s*:\s*url\(\s*[\"']?([^\"')]+)[\"']?\s*\)""",
+                RegexOption.IGNORE_CASE,
+            )
+            backgroundPattern.findAll(html).forEach { add(it.groupValues[1]) }
             val jsonPattern = Regex(
                 """[\"'](?:poster|cover|image|img|pic)[\"']\s*:\s*[\"']([^\"']+)[\"']""",
                 RegexOption.IGNORE_CASE,
@@ -505,13 +510,19 @@ class ApiClient(context: Context, private val siteSettings: SiteSettingsStore) {
             setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL),
         )
         val imagePattern = Regex(
-            """<(?:img|source)\b[^>]*(?:src|data-src|data-original|srcset)\s*=\s*[\"']([^\"']+)[\"']""",
+            """<(?:img|source)\b[^>]*(?:src|data-src|data-original|data-lazy-src|data-original-src|data-url|srcset)\s*=\s*[\"']([^\"']+)[\"']""",
+            RegexOption.IGNORE_CASE,
+        )
+        val backgroundPattern = Regex(
+            """background-image\s*:\s*url\(\s*[\"']?([^\"')]+)[\"']?\s*\)""",
             RegexOption.IGNORE_CASE,
         )
         cardPattern.findAll(html).forEach { card ->
             val dir = card.groupValues[1]
             val id = card.groupValues[2]
-            val raw = imagePattern.find(card.groupValues[3])?.groupValues?.get(1)?.substringBefore(',')
+            val cardHtml = card.groupValues[3]
+            val raw = imagePattern.find(cardHtml)?.groupValues?.get(1)?.substringBefore(',')
+                ?: backgroundPattern.find(cardHtml)?.groupValues?.get(1)
                 ?: return@forEach
             val resolved = resolveImageUrl(raw) ?: return@forEach
             posterByItem["$dir/$id"] = resolved
