@@ -743,13 +743,15 @@ fun PlayerScreen(
                 tint = Color.White,
             )
         }
-        // 返回按钮固定在左上角，符合横屏播放器的常见布局，锁定时仍可退出播放器。
-        IconButton(
-            onClick = { exitPlayer() },
-            enabled = !exiting,
-            modifier = Modifier.align(Alignment.TopStart).padding(top = 16.dp, start = 16.dp),
-        ) {
-            Icon(Icons.Default.ArrowBack, contentDescription = "返回", tint = Color.White)
+        // 返回按钮固定在左上角；锁定时隐藏，避免误触退出播放器。
+        if (!locked) {
+            IconButton(
+                onClick = { exitPlayer() },
+                enabled = !exiting,
+                modifier = Modifier.align(Alignment.TopStart).padding(top = 16.dp, start = 16.dp),
+            ) {
+                Icon(Icons.Default.ArrowBack, contentDescription = "返回", tint = Color.White)
+            }
         }
         gestureHint?.let { hint ->
             Row(
