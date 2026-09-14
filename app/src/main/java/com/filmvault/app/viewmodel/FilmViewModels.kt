@@ -100,6 +100,7 @@ class AuthViewModel : ViewModel() {
                     refreshCaptcha()
                 } else {
                     error = "验证码校验通过"
+                    captchaRequired = false
                 }
             }
         }
