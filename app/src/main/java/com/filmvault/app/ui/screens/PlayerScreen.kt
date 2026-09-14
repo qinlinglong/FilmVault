@@ -68,6 +68,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.foundation.shape.RoundedCornerShape
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
@@ -361,9 +362,11 @@ fun PlayerScreen(
                     var seekStartPosition = 0L
                     var seekDeltaMs = 0L
                     var singleTapTask: Runnable? = null
+                    var gestureHintClearJob: Job? = null
 
                     fun scheduleGestureHintClear() {
-                        gestureScope.launch {
+                        gestureHintClearJob?.cancel()
+                        gestureHintClearJob = gestureScope.launch {
                             delay(900)
                             gestureHint = null
                         }
@@ -387,6 +390,8 @@ fun PlayerScreen(
                             audioManager?.setStreamVolume(AudioManager.STREAM_MUSIC, next, 0)
                             gestureHint = "音量 ${(next * 100 / max.coerceAtLeast(1))}%"
                         }
+                        // 亮度/音量是连续手势，实时更新数值，同时在手势结束后自动收起提示。
+                        scheduleGestureHintClear()
                     }
 
                     setOnTouchListener { playerView, event ->

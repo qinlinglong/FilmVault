@@ -46,16 +46,7 @@ object Constants {
     val SEARCH_MODES = listOf("1" to "模糊", "2" to "适中", "3" to "精准")
 }
 
-data class Category(val dir: String, val label: String, val api: String) {
-    fun poster(baseUrl: String, id: String, size: String = "256") = posterUrl(baseUrl, dir, id, size)
-}
-
-/** 使用用户当前配置的仓库地址生成站点自身的海报路径。 */
-fun posterUrl(baseUrl: String, dir: String, id: String, size: String = "256"): String? {
-    val base = baseUrl.trim().trimEnd('/')
-    if (base.isBlank()) return null
-    return "$base/img/$dir/$id/$size.webp"
-}
+data class Category(val dir: String, val label: String, val api: String)
 
 /** 从站点地址中取出 host（用于按域名隔离 cookie） */
 fun hostOf(url: String): String {
