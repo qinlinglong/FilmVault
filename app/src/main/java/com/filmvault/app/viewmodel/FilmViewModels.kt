@@ -100,6 +100,9 @@ class AuthViewModel : ViewModel() {
         viewModelScope.launch {
             captchaVerified = runCatching { repo.verifyCaptcha(captchaPoints, width, height) }.getOrDefault(false)
             if (captchaVerified) {
+                // H5 在验证码校验成功后，会把同一份坐标串作为 code
+                // 随第二次 /user/login 一并提交；原生端也必须保留它。
+                captcha = captchaPoints.joinToString("-") { (x, y) -> "$x,$y" } + ";$width;$height"
                 error = "验证码校验通过，正在登录…"
                 captchaRequired = false
                 login(onSuccess)
