@@ -31,11 +31,14 @@ import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -60,8 +63,19 @@ fun DetailScreen(nav: NavController, dir: String, id: String) {
     val meta = vm.meta
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var tab by remember { mutableIntStateOf(0) }
+    // 播放器返回后保留用户所在的资源 Tab，避免先显示详情顶部再跳回在线播放。
+    var tab by rememberSaveable { mutableIntStateOf(0) }
+    val detailEntry = nav.currentBackStackEntry
+    val detailScrollState = rememberScrollState(
+        initial = detailEntry?.savedStateHandle?.get<Int>("detail_scroll_y") ?: 0,
+    )
     var resolvingKey by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(detailScrollState, detailEntry) {
+        snapshotFlow { detailScrollState.value }.collect { scrollY ->
+            detailEntry?.savedStateHandle?.set("detail_scroll_y", scrollY)
+        }
+    }
 
     Column(Modifier.fillMaxSize()) {
         // 顶栏
@@ -88,7 +102,7 @@ fun DetailScreen(nav: NavController, dir: String, id: String) {
 
         BoxWithConstraints {
           val wide = maxWidth >= 600.dp
-          Column(Modifier.verticalScroll(rememberScrollState()).padding(if (wide) 28.dp else 16.dp)) {
+          Column(Modifier.verticalScroll(detailScrollState).padding(if (wide) 28.dp else 16.dp)) {
             // 头部：海报 + 信息
             Row(Modifier.fillMaxWidth()) {
                 PosterImage(
@@ -146,6 +160,9 @@ fun DetailScreen(nav: NavController, dir: String, id: String) {
                 2 -> PlayList(vm.resources?.playLines ?: emptyList(), resolvingKey) { line, episode ->
                     val key = "${line.id}/$episode"
                     if (resolvingKey != null) return@PlayList
+                    // 先锁定在线播放 Tab 并保存当前资源滚动位置，再异步解析播放地址。
+                    tab = 2
+                    detailEntry?.savedStateHandle?.set("detail_scroll_y", detailScrollState.value)
                     resolvingKey = key
                     scope.launch {
                         try {

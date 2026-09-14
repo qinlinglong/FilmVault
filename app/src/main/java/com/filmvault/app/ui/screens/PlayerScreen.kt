@@ -303,6 +303,15 @@ fun PlayerScreen(
         }
     }
 
+    fun preparePlayerExit() {
+        val window = activity?.window ?: return
+        // 先恢复播放器进入前的系统栏和方向，再切回详情页，避免详情页先按横屏
+        // Insets 绘制一帧后才旋转回去，造成返回时的上下抖动。
+        WindowCompat.getInsetsController(window, view).show(WindowInsetsCompat.Type.systemBars())
+        activity?.requestedOrientation = previousOrientation
+        window.setSoftInputMode(previousSoftInputMode)
+    }
+
     fun exitPlayer() {
         if (exiting) return
         exiting = true
@@ -312,6 +321,7 @@ fun PlayerScreen(
         playlistExpanded = false
         speedMenuExpanded = false
         trackMenuType = null
+        preparePlayerExit()
         nav.popBackStack()
     }
 
