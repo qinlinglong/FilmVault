@@ -6,6 +6,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -31,6 +32,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -139,13 +142,26 @@ fun LoginScreen(nav: NavController, vm: AuthViewModel = viewModel()) {
                                     },
                             ) {
                                 Image(bitmap, "验证码图片", Modifier.fillMaxSize())
+                                Canvas(Modifier.fillMaxSize()) {
+                                    vm.captchaPoints.forEachIndexed { index, point ->
+                                        val center = Offset(
+                                            point.first / 350f * size.width,
+                                            point.second / 200f * size.height,
+                                        )
+                                        drawCircle(Color(0xFF2E7D32), 15.dp.toPx(), center)
+                                        drawLine(Color.White, center + Offset(-7f, 0f), center + Offset(-2f, 6f), 3.dp.toPx())
+                                        drawLine(Color.White, center + Offset(-2f, 6f), center + Offset(8f, -7f), 3.dp.toPx())
+                                    }
+                                }
                             }
                         } else Text("验证码图片加载失败，请点击换一张")
                     }
                     Button(onClick = { vm.refreshCaptcha() }, modifier = Modifier.fillMaxWidth()) {
                         Text("换一张验证码")
                     }
-                    if (vm.error != null) Text(vm.error!!, color = MaterialTheme.colorScheme.error)
+                    if (vm.error != null) {
+                        Text(vm.error!!, color = if (vm.captchaVerified) Color(0xFF2E7D32) else MaterialTheme.colorScheme.error)
+                    }
                 }
             },
             confirmButton = {

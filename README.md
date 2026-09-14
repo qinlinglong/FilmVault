@@ -10,7 +10,7 @@ FilmVault 是一个**通用的原生 Android 视频资源仓库壳应用**，用
 
 仓库地址：[github.com/qinlinglong/FilmVault](https://github.com/qinlinglong/FilmVault)
 
-当前版本：`1.0.40` · [下载最新 Release](https://github.com/qinlinglong/FilmVault/releases/tag/v1.0.40)
+当前版本：`1.0.41` · [下载最新 Release](https://github.com/qinlinglong/FilmVault/releases/tag/v1.0.41)
 
 本 App 是一个模块化影视仓库与信息聚合工具，不提供、存储、上传或分发任何影视资源。内容与第三方链接来自用户配置的站点或相关服务，版权及使用责任归原权利人和使用者。
 
