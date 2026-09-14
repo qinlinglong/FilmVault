@@ -159,6 +159,13 @@ fun LoginScreen(nav: NavController, vm: AuthViewModel = viewModel()) {
                     Button(onClick = { vm.refreshCaptcha() }, modifier = Modifier.fillMaxWidth()) {
                         Text("换一张验证码")
                     }
+                    Button(
+                        onClick = { vm.verifyCaptcha() },
+                        enabled = !vm.captchaVerified && vm.captchaPoints.size >= vm.captchaTarget.length,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text(if (vm.captchaVerified) "已验证" else "校验验证码")
+                    }
                     if (vm.error != null) {
                         Text(vm.error!!, color = if (vm.captchaVerified) Color(0xFF2E7D32) else MaterialTheme.colorScheme.error)
                     }
