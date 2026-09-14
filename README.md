@@ -66,7 +66,7 @@ BT 客户端 / 网盘 App 处理；在线播放线路则在 App 内使用 Media3
 | 收藏 | `GET /res/favorite/add|del/{dir}/{id}` | 增删；列表本地由 DataStore 维护 |
 | 历史 | `GET /res/historys` | JSON 数组 |
 | 热门 | `GET /hits/{mv\|tv\|ac}/{day\|week\|month\|numbers}` | 与网页热门页一致的时间范围排行 |
-| 海报 | `/img/{dir}/{id}/256.webp` | 当前站点可用的封面格式 |
+| 海报 | `/img/{dir}/{id}/256.webp` | 使用用户配置仓库自身的封面路径 |
 
 **PoW 关键公式**（经验证与浏览器行为一致）：
 ```

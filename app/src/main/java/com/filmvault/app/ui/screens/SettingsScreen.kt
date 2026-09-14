@@ -79,7 +79,7 @@ fun SettingsScreen(nav: NavController) {
                     value = vm.input,
                     onValueChange = { vm.updateInput(it) },
                     label = { Text("站点地址") },
-                    placeholder = { Text("例如 你的仓库地址") },
+                    placeholder = { Text("例如：你的仓库地址") },
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                     modifier = Modifier.fillMaxWidth(),

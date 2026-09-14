@@ -52,7 +52,7 @@ fun LoginScreen(nav: NavController, vm: AuthViewModel = viewModel()) {
             value = vm.siteUrl,
             onValueChange = { vm.siteUrl = it },
             label = { Text("模块化仓库地址") },
-            placeholder = { Text("你的仓库地址") },
+            placeholder = { Text("输入你的模块化仓库地址") },
             singleLine = true,
             modifier = Modifier.fillMaxWidth(),
         )

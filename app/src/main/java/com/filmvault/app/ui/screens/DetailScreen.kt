@@ -56,6 +56,7 @@ import com.filmvault.app.ui.components.PosterImage
 import com.filmvault.app.util.Playback
 import com.filmvault.app.viewmodel.DetailViewModel
 import kotlinx.coroutines.launch
+import com.filmvault.app.util.posterUrl
 
 @Composable
 fun DetailScreen(nav: NavController, dir: String, id: String) {
@@ -106,7 +107,7 @@ fun DetailScreen(nav: NavController, dir: String, id: String) {
             // 头部：海报 + 信息
             Row(Modifier.fillMaxWidth()) {
                 PosterImage(
-                    url = meta?.posterUrl ?: "/img/$dir/$id/256.webp",
+                    url = posterUrl(AppModule.siteSettings.siteUrlNow, dir, id),
                     contentDescription = null,
                     modifier = Modifier.width(if (wide) 180.dp else 110.dp).height(if (wide) 260.dp else 160.dp).clip(RoundedCornerShape(10.dp)),
                     contentScale = ContentScale.Crop,

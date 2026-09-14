@@ -9,7 +9,6 @@ object Constants {
     /** 默认站点地址（用户可在 App 内重新配置 / 切换） */
     /** 不内置任何站点；首次使用需由用户在登录页填写模块化仓库地址。 */
     const val DEFAULT_BASE_URL = ""
-    const val DEFAULT_IMG_BASE = "/img"
     const val REPOSITORY_URL = "https://github.com/qinlinglong/FilmVault"
 
     // 分类目录 -> 接口 dir
@@ -48,12 +47,15 @@ object Constants {
 }
 
 data class Category(val dir: String, val label: String, val api: String) {
-    fun poster(id: String, size: String = "256") = "${Constants.DEFAULT_IMG_BASE}/${dir}/${id}/${size}.webp"
+    fun poster(baseUrl: String, id: String, size: String = "256") = posterUrl(baseUrl, dir, id, size)
 }
 
-/** 海报地址 */
-fun posterUrl(dir: String, id: String, size: String = "256") =
-    "${Constants.DEFAULT_IMG_BASE}/$dir/$id/$size.webp"
+/** 使用用户当前配置的仓库地址生成站点自身的海报路径。 */
+fun posterUrl(baseUrl: String, dir: String, id: String, size: String = "256"): String? {
+    val base = baseUrl.trim().trimEnd('/')
+    if (base.isBlank()) return null
+    return "$base/img/$dir/$id/$size.webp"
+}
 
 /** 从站点地址中取出 host（用于按域名隔离 cookie） */
 fun hostOf(url: String): String {

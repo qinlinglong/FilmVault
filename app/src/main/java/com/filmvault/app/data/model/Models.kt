@@ -16,10 +16,6 @@ data class MovieItem(
     val regionCode: Int? = null,// 地区码 (a[1])
     val genreCodes: List<Int> = emptyList(), // 类型码 (a[2..])
 ) {
-    val posterUrl: String
-        get() = "/img/$dir/$id/256.webp"
-    val posterLargeUrl: String
-        get() = "/img/$dir/$id/256.webp"
 }
 
 /** 详情元数据（从 /{dir}/{id} HTML 内嵌 JSON 解析） */
@@ -39,7 +35,6 @@ data class DetailMeta(
     val cast: List<String> = emptyList(),
     val episodes: List<EpisodeRef> = emptyList(),
 ) {
-    val posterUrl: String get() = "/img/$dir/$id/256.webp"
 }
 
 data class EpisodeRef(

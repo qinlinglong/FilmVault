@@ -51,7 +51,7 @@ class FileCookieJar(context: Context) : CookieJar {
         synchronized(lock) {
             val host = url.host
             val result = mutableListOf<Cookie>()
-            // 精确域名 + 父域名(用户配置的仓库域名) 的 cookie 都要带上
+            // 精确域名和父域名 cookie 都要带上
             memory[host]?.let { result += it.filter { c -> c.expiresAt > System.currentTimeMillis() } }
             val base = host.indexOf('.')
             if (base >= 0) {
