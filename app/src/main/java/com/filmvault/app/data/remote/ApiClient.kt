@@ -2,6 +2,7 @@ package com.filmvault.app.data.remote
 
 import android.content.Context
 import com.filmvault.app.data.model.CloudItem
+import com.filmvault.app.data.model.CaptchaChallenge
 import com.filmvault.app.data.model.DetailMeta
 import com.filmvault.app.data.model.EpisodeRef
 import com.filmvault.app.data.model.HistoryItem
@@ -189,6 +190,49 @@ class ApiClient(context: Context, private val siteSettings: SiteSettingsStore) {
                 message = if (captchaRequired) "站点要求输入验证码，请填写后重试" else "登录失败，请检查账号密码",
                 captchaRequired = captchaRequired,
             )
+        }
+    }
+
+    /** 获取站点按需返回的验证码图片，图片仅用于展示给用户手动输入。 */
+    suspend fun getCaptcha(): CaptchaChallenge = withContext(Dispatchers.IO) {
+        ensureVerified()
+        val response = executeWithVerification {
+            client.newCall(
+                Request.Builder()
+                    .url("${baseUrl}/res/captcha/2")
+                    .post(FormBody.Builder().add("webp", "1").build())
+                    .build(),
+            ).execute()
+        }
+        response.use {
+            val body = it.body?.string().orEmpty()
+            val root = json.parseToJsonElement(body).jsonObject
+            val type = root["type"]?.jsonPrimitive?.content?.lowercase() ?: "png"
+            val image = root["img"]?.jsonPrimitive?.content
+                ?.takeIf { value -> value.isNotBlank() }
+                ?: throw IOException("验证码图片为空")
+            CaptchaChallenge(
+                imageData = "data:image/$type;base64,$image",
+                targetText = root["text"]?.jsonPrimitive?.content.orEmpty(),
+            )
+        }
+    }
+
+    /** 校验图片点选验证码；成功后站点会在当前会话中放行登录。 */
+    suspend fun verifyCaptcha(points: List<Pair<Int, Int>>): Boolean = withContext(Dispatchers.IO) {
+        ensureVerified()
+        val info = points.joinToString("-") { (x, y) -> "$x,$y" } + ";350;200"
+        val response = executeWithVerification {
+            client.newCall(
+                Request.Builder()
+                    .url("${baseUrl}/res/captcha/2")
+                    .post(FormBody.Builder().add("do", "check").add("info", info).build())
+                    .build(),
+            ).execute()
+        }
+        response.use {
+            val root = json.parseToJsonElement(it.body?.string().orEmpty()).jsonObject
+            root["code"]?.jsonPrimitive?.content?.toIntOrNull() == 1
         }
     }
 

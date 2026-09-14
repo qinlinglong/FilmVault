@@ -3,6 +3,7 @@ package com.filmvault.app.data.repository
 import com.filmvault.app.data.model.DetailMeta
 import com.filmvault.app.data.model.MovieItem
 import com.filmvault.app.data.model.LoginResult
+import com.filmvault.app.data.model.CaptchaChallenge
 import com.filmvault.app.data.model.Resources
 import com.filmvault.app.data.remote.ApiClient
 import com.filmvault.app.util.FavEntry
@@ -22,6 +23,8 @@ class FilmRepository(
     private val historyStore: HistoryStore,
 ) {
     suspend fun login(email: String, password: String, captcha: String = ""): LoginResult = api.login(email, password, captcha)
+    suspend fun getCaptcha(): CaptchaChallenge = api.getCaptcha()
+    suspend fun verifyCaptcha(points: List<Pair<Int, Int>>): Boolean = api.verifyCaptcha(points)
     fun isLoggedIn(): Boolean = api.isLoggedIn()
     fun logout() = api.logout()
 

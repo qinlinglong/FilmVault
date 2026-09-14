@@ -9,13 +9,21 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
@@ -24,13 +32,17 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.platform.LocalDensity
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import com.filmvault.app.R
 import com.filmvault.app.viewmodel.AuthViewModel
+import coil.compose.AsyncImage
 
 @Composable
 fun LoginScreen(nav: NavController, vm: AuthViewModel = viewModel()) {
+    var captchaWidthPx by remember { mutableIntStateOf(350) }
+    val density = LocalDensity.current
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -79,6 +91,27 @@ fun LoginScreen(nav: NavController, vm: AuthViewModel = viewModel()) {
         Spacer(Modifier.height(16.dp))
 
         if (vm.captchaRequired) {
+            if (vm.captchaTarget.isNotBlank()) {
+                Text("请按顺序点击：${vm.captchaTarget}", color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.75f))
+            }
+            vm.captchaImage?.let { image ->
+                AsyncImage(
+                    model = image,
+                    contentDescription = "验证码图片",
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(200.dp)
+                        .onSizeChanged { captchaWidthPx = it.width.coerceAtLeast(1) }
+                        .pointerInput(vm.captchaImage, vm.captchaTarget) {
+                            detectTapGestures { offset ->
+                                vm.addCaptchaTap(
+                                    (offset.x / captchaWidthPx * 350f).toInt(),
+                                    (offset.y / with(density) { 200.dp.toPx() } * 200f).toInt(),
+                                )
+                            }
+                        },
+                )
+            }
             OutlinedTextField(
                 value = vm.captcha,
                 onValueChange = { vm.captcha = it },
@@ -87,6 +120,7 @@ fun LoginScreen(nav: NavController, vm: AuthViewModel = viewModel()) {
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
             )
+            TextButton(onClick = { vm.refreshCaptcha() }) { Text("看不清，换一张") }
             Spacer(Modifier.height(16.dp))
         }
 

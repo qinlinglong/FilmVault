@@ -35,6 +35,10 @@ class AuthViewModel : ViewModel() {
     var password by mutableStateOf("")
     var captcha by mutableStateOf("")
     var captchaRequired by mutableStateOf(false)
+    var captchaImage by mutableStateOf<String?>(null)
+    var captchaTarget by mutableStateOf("")
+    var captchaVerified by mutableStateOf(false)
+    var captchaPoints by mutableStateOf<List<Pair<Int, Int>>>(emptyList())
     var isLoading by mutableStateOf(false)
     var error by mutableStateOf<String?>(null)
     var loggedIn by mutableStateOf(AppModule.repository.isLoggedIn())
@@ -42,6 +46,10 @@ class AuthViewModel : ViewModel() {
     fun login(onSuccess: () -> Unit) {
         if (siteUrl.isBlank() || email.isBlank() || password.isBlank()) {
             error = "请填写站点地址、账号和密码"
+            return
+        }
+        if (captchaRequired && captchaTarget.isNotBlank() && !captchaVerified) {
+            error = "请先按顺序点击验证码中的文字"
             return
         }
         viewModelScope.launch {
@@ -56,11 +64,43 @@ class AuthViewModel : ViewModel() {
                 } else {
                     captchaRequired = result.captchaRequired
                     error = result.message
+                    if (captchaRequired && captchaImage == null) refreshCaptcha()
                 }
             } catch (e: Exception) {
                 error = "网络错误：${e.message}"
             } finally {
                 isLoading = false
+            }
+        }
+    }
+
+    fun refreshCaptcha() {
+        captchaVerified = false
+        captchaPoints = emptyList()
+        captcha = ""
+        viewModelScope.launch {
+            runCatching { repo.getCaptcha() }
+                .onSuccess { challenge ->
+                    captchaImage = challenge.imageData
+                    captchaTarget = challenge.targetText
+                }
+                .onFailure { error = "验证码获取失败：${it.message}" }
+        }
+    }
+
+    fun addCaptchaTap(x: Int, y: Int) {
+        if (captchaVerified || captchaTarget.isBlank()) return
+        val next = captchaPoints + (x to y)
+        captchaPoints = next
+        if (next.size >= captchaTarget.length) {
+            viewModelScope.launch {
+                captchaVerified = runCatching { repo.verifyCaptcha(next) }.getOrDefault(false)
+                if (!captchaVerified) {
+                    error = "验证码校验失败，请按提示重新点选"
+                    refreshCaptcha()
+                } else {
+                    error = "验证码校验通过"
+                }
             }
         }
     }

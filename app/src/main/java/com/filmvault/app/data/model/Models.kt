@@ -98,3 +98,10 @@ data class LoginResult(
     val message: String? = null,
     val captchaRequired: Boolean = false,
 )
+
+data class CaptchaChallenge(
+    val imageData: String,
+    val targetText: String = "",
+    val width: Int = 350,
+    val height: Int = 200,
+)
