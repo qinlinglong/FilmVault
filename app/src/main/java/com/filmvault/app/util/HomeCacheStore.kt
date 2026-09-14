@@ -23,5 +23,6 @@ class HomeCacheStore(context: Context) {
         }
     }
 
-    private fun key(siteHost: String): String = "home_${siteHost.lowercase()}"
+    // 封面地址解析规则变化时自动隔离旧缓存，避免继续使用已失效的图片地址。
+    private fun key(siteHost: String): String = "home_v2_${siteHost.lowercase()}"
 }

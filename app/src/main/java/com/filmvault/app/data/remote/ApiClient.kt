@@ -69,6 +69,7 @@ class ApiClient(context: Context, private val siteSettings: SiteSettingsStore) {
     private var verificationGeneration = 0L
     private var posterTemplate: String? = null
     private val posterByItem = mutableMapOf<String, String>()
+    private var posterImageSize = "256"
 
     /** 当前站点地址（运行时从配置读取，支持随时切换）。 */
     private val baseUrl: String get() = siteSettings.siteUrlNow
@@ -232,6 +233,7 @@ class ApiClient(context: Context, private val siteSettings: SiteSettingsStore) {
         val html = requestTextWithVerification {
             client.newCall(Request.Builder().url(baseUrl).build()).execute()
         }
+        discoverPosterSource(html)
         parseHomeHtml(html)
     }
 
@@ -268,6 +270,7 @@ class ApiClient(context: Context, private val siteSettings: SiteSettingsStore) {
             .header("Accept", "text/html,application/xhtml+xml")
             .build()
         val html = requestTextWithVerification { client.newCall(request).execute() }
+        discoverPosterSource(html)
         extractPosterMap(html)
         parseHotHtml(html, dir)
     }
@@ -401,6 +404,7 @@ class ApiClient(context: Context, private val siteSettings: SiteSettingsStore) {
             val html = requestTextWithVerification {
                 client.newCall(Request.Builder().url("${baseUrl}/$dir/$id").build()).execute()
             }
+            discoverPosterSource(html)
             extractPosterMap(html)
             parseDetailMeta(html, dir, id, fallbackTitle)
         }
@@ -548,9 +552,45 @@ class ApiClient(context: Context, private val siteSettings: SiteSettingsStore) {
             val html = requestTextWithVerification {
                 client.newCall(Request.Builder().url(baseUrl).build()).execute()
             }
+            discoverPosterSource(html)
             extractPosterMap(html)
         }
     }
+
+    /**
+     * 首页的影片数据不直接带图片，网页端由脚本中的 imghost/imgc 动态生成封面。
+     * 从当前站点返回的 script 中读取这两个配置，避免在客户端写死图片域名。
+     */
+    private suspend fun discoverPosterSource(html: String) {
+        if (posterTemplate != null || baseUrl.isBlank()) return
+        val scriptUrls = Regex(
+            """<script\b[^>]+src\s*=\s*[\"']([^\"']+)[\"']""",
+            RegexOption.IGNORE_CASE,
+        ).findAll(html)
+            .mapNotNull { resolveScriptUrl(it.groupValues[1]) }
+            .distinct()
+            .toList()
+        for (scriptUrl in scriptUrls) {
+            val script = runCatching {
+                requestTextWithVerification {
+                    client.newCall(Request.Builder().url(scriptUrl).build()).execute()
+                }
+            }.getOrNull() ?: continue
+            val imageHost = Regex(
+                """\bimghost\s*:\s*[\"']([^\"']+)[\"']""",
+                RegexOption.IGNORE_CASE,
+            ).find(script)?.groupValues?.get(1)?.trimEnd('/') ?: continue
+            Regex("""\bxx\s*:\s*(\d+)""").find(script)?.groupValues?.get(1)?.let {
+                posterImageSize = it
+            }
+            posterTemplate = "$imageHost/img/{dir}/{id}/$posterImageSize.webp"
+            return
+        }
+    }
+
+    private fun resolveScriptUrl(raw: String): String? = runCatching {
+        baseUrl.toHttpUrl().resolve(raw)?.toString()
+    }.getOrNull()
 
     /** 以当前站点 URL 解析网页返回的绝对、协议相对或相对图片地址。 */
     private fun resolveImageUrl(raw: String?): String? {

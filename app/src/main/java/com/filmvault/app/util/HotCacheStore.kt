@@ -24,5 +24,5 @@ class HotCacheStore(context: Context) {
     }
 
     private fun key(siteHost: String, dir: String, period: String): String =
-        "hot_${siteHost.lowercase()}_${dir}_$period"
+        "hot_v2_${siteHost.lowercase()}_${dir}_$period"
 }
