@@ -93,4 +93,8 @@ data class HistoryItem(
 )
 
 /** 登录结果 */
-data class LoginResult(val success: Boolean, val message: String? = null)
+data class LoginResult(
+    val success: Boolean,
+    val message: String? = null,
+    val captchaRequired: Boolean = false,
+)

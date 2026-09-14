@@ -2,6 +2,7 @@ package com.filmvault.app.data.repository
 
 import com.filmvault.app.data.model.DetailMeta
 import com.filmvault.app.data.model.MovieItem
+import com.filmvault.app.data.model.LoginResult
 import com.filmvault.app.data.model.Resources
 import com.filmvault.app.data.remote.ApiClient
 import com.filmvault.app.util.FavEntry
@@ -20,7 +21,7 @@ class FilmRepository(
     private val favStore: FavoritesStore,
     private val historyStore: HistoryStore,
 ) {
-    suspend fun login(email: String, password: String): Boolean = api.login(email, password)
+    suspend fun login(email: String, password: String, captcha: String = ""): LoginResult = api.login(email, password, captcha)
     fun isLoggedIn(): Boolean = api.isLoggedIn()
     fun logout() = api.logout()
 

@@ -33,6 +33,8 @@ class AuthViewModel : ViewModel() {
     var siteUrl by mutableStateOf(AppModule.siteSettings.siteUrlNow)
     var email by mutableStateOf("")
     var password by mutableStateOf("")
+    var captcha by mutableStateOf("")
+    var captchaRequired by mutableStateOf(false)
     var isLoading by mutableStateOf(false)
     var error by mutableStateOf<String?>(null)
     var loggedIn by mutableStateOf(AppModule.repository.isLoggedIn())
@@ -47,12 +49,13 @@ class AuthViewModel : ViewModel() {
             error = null
             try {
                 AppModule.siteSettings.setSite(siteUrl)
-                val ok = repo.login(email.trim(), password)
-                if (ok) {
+                val result = repo.login(email.trim(), password, captcha.trim())
+                if (result.success) {
                     loggedIn = true
                     onSuccess()
                 } else {
-                    error = "登录失败，请检查账号密码"
+                    captchaRequired = result.captchaRequired
+                    error = result.message
                 }
             } catch (e: Exception) {
                 error = "网络错误：${e.message}"

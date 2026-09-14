@@ -164,8 +164,8 @@ class ApiClient(context: Context, private val siteSettings: SiteSettingsStore) {
         ).execute().use { /* 服务器返回 browser_verified cookie */ }
     }
 
-    /** 登录。成功返回 true。 */
-    suspend fun login(email: String, password: String): Boolean = withContext(Dispatchers.IO) {
+    /** 登录。若站点触发验证码，返回 captchaRequired 让用户自行填写。 */
+    suspend fun login(email: String, password: String, captcha: String = ""): com.filmvault.app.data.model.LoginResult = withContext(Dispatchers.IO) {
         ensureVerified()
         val form = FormBody.Builder()
             .add("username", email)
@@ -174,14 +174,21 @@ class ApiClient(context: Context, private val siteSettings: SiteSettingsStore) {
             .add("cookietime", "10506240")
             .add("siteid", "1")
             .add("dosubmit", "1")
-            .add("code", "")
+            .add("code", captcha)
             .build()
         val resp = executeWithVerification { client.newCall(
             Request.Builder().url("${baseUrl}/user/login").post(form).build()
         ).execute() }
         resp.use {
             val ok = cookieJar.hasCookie("app_auth")
-            return@withContext ok
+            if (ok) return@withContext com.filmvault.app.data.model.LoginResult(success = true)
+            val body = it.body?.string().orEmpty()
+            val captchaRequired = Regex("验证码|captcha|verify[_-]?code", RegexOption.IGNORE_CASE).containsMatchIn(body)
+            return@withContext com.filmvault.app.data.model.LoginResult(
+                success = false,
+                message = if (captchaRequired) "站点要求输入验证码，请填写后重试" else "登录失败，请检查账号密码",
+                captchaRequired = captchaRequired,
+            )
         }
     }
 

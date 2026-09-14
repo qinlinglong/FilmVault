@@ -78,6 +78,18 @@ fun LoginScreen(nav: NavController, vm: AuthViewModel = viewModel()) {
         )
         Spacer(Modifier.height(16.dp))
 
+        if (vm.captchaRequired) {
+            OutlinedTextField(
+                value = vm.captcha,
+                onValueChange = { vm.captcha = it },
+                label = { Text("验证码") },
+                placeholder = { Text("站点要求时填写") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Spacer(Modifier.height(16.dp))
+        }
+
         if (vm.error != null) {
             Text(vm.error!!, color = MaterialTheme.colorScheme.error, textAlign = TextAlign.Center)
             Spacer(Modifier.height(8.dp))
