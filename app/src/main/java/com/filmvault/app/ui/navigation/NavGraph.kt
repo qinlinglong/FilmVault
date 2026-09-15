@@ -77,13 +77,14 @@ fun AppNavHost(startDestination: String = "auth") {
             DetailScreen(nav, dir, id)
         }
         composable(
-            route = "player/{url}?lineId={lineId}&episode={episode}&episodeCount={episodeCount}&lineName={lineName}",
+            route = "player/{url}?lineId={lineId}&episode={episode}&episodeCount={episodeCount}&lineName={lineName}&resourceTitle={resourceTitle}",
             arguments = listOf(
                 navArgument("url") { type = NavType.StringType },
                 navArgument("lineId") { type = NavType.StringType; defaultValue = "" },
                 navArgument("episode") { type = NavType.IntType; defaultValue = 1 },
                 navArgument("episodeCount") { type = NavType.IntType; defaultValue = 1 },
                 navArgument("lineName") { type = NavType.StringType; defaultValue = "" },
+                navArgument("resourceTitle") { type = NavType.StringType; defaultValue = "" },
             ),
         ) { back ->
             val url = back.arguments?.getString("url") ?: ""
@@ -94,6 +95,7 @@ fun AppNavHost(startDestination: String = "auth") {
                 startEpisode = back.arguments?.getInt("episode") ?: 1,
                 episodeCount = back.arguments?.getInt("episodeCount") ?: 1,
                 lineName = back.arguments?.getString("lineName").orEmpty(),
+                resourceTitle = back.arguments?.getString("resourceTitle").orEmpty(),
             )
         }
     }

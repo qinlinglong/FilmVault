@@ -175,7 +175,8 @@ fun DetailScreen(nav: NavController, dir: String, id: String) {
                                         "?lineId=${Uri.encode(line.id)}" +
                                         "&episode=$episode" +
                                         "&episodeCount=${line.episodes.size}" +
-                                        "&lineName=${Uri.encode(line.name)}",
+                                        "&lineName=${Uri.encode(line.name)}" +
+                                        "&resourceTitle=${Uri.encode(meta?.title.orEmpty())}",
                                 )
                             } else {
                                 Toast.makeText(context, "未解析到直链，已尝试打开在线播放页", Toast.LENGTH_SHORT).show()

@@ -58,6 +58,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
@@ -161,6 +162,7 @@ fun PlayerScreen(
     startEpisode: Int = 1,
     episodeCount: Int = 1,
     lineName: String = "",
+    resourceTitle: String = "",
 ) {
     val context = LocalContext.current
     val view = LocalView.current
@@ -555,6 +557,30 @@ fun PlayerScreen(
             Box(
                 Modifier.fillMaxSize().pointerInput(Unit) { detectTapGestures { } },
             )
+        }
+        if (!locked && controlsVisible) {
+            // 行业播放器惯例：控制栏出现时在顶部展示媒体标题，返回按钮独立悬浮在左侧。
+            Row(
+                modifier = Modifier.align(Alignment.TopCenter)
+                    .fillMaxWidth()
+                    .padding(start = 64.dp, top = 12.dp, end = 64.dp)
+                    .background(Color.Black.copy(alpha = 0.52f), RoundedCornerShape(18.dp))
+                    .padding(horizontal = 16.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = buildString {
+                        append(resourceTitle.ifBlank { lineName.ifBlank { "正在播放" } })
+                        if (episodeTotal > 1) append(" · 第${currentEpisode}集")
+                    },
+                    color = Color.White,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
+                )
+            }
         }
         if (!locked && controlsVisible) {
             // 进度条与所有工具共用同一个面板：进度条在上、工具栏在下，布局稳定且
