@@ -377,6 +377,14 @@ fun PlayerScreen(
                         scheduleGestureHintClear()
                     }
 
+                    fun adjustVolume(delta: Int) {
+                        val maxVolume = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+                        val currentVolume = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
+                        val nextVolume = (currentVolume + delta).coerceIn(0, maxVolume)
+                        audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, nextVolume, 0)
+                        showGestureHint("音量 ${if (maxVolume > 0) nextVolume * 100 / maxVolume else 0}%")
+                    }
+
                     fun updateGestureValue(deltaY: Float, touchX: Float, viewWidth: Int) {
                         if (touchX < viewWidth / 2f) {
                             val next = (startBrightness + deltaY / 900f).coerceIn(0.05f, 1f)
@@ -499,6 +507,16 @@ fun PlayerScreen(
                             android.view.KeyEvent.KEYCODE_SPACE,
                             android.view.KeyEvent.KEYCODE_ENTER -> {
                                 if (player.isPlaying) player.pause() else player.play()
+                                true
+                            }
+                            android.view.KeyEvent.KEYCODE_DPAD_UP,
+                            android.view.KeyEvent.KEYCODE_VOLUME_UP -> {
+                                adjustVolume(1)
+                                true
+                            }
+                            android.view.KeyEvent.KEYCODE_DPAD_DOWN,
+                            android.view.KeyEvent.KEYCODE_VOLUME_DOWN -> {
+                                adjustVolume(-1)
                                 true
                             }
                             else -> false
