@@ -563,11 +563,17 @@ fun PlayerScreen(
             Row(
                 modifier = Modifier.align(Alignment.TopCenter)
                     .fillMaxWidth()
-                    .padding(start = 64.dp, top = 12.dp, end = 64.dp)
+                    .padding(start = 12.dp, top = 12.dp, end = 12.dp)
                     .background(Color.Black.copy(alpha = 0.52f), RoundedCornerShape(18.dp))
-                    .padding(horizontal = 16.dp, vertical = 10.dp),
+                    .padding(start = 0.dp, top = 4.dp, end = 16.dp, bottom = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
+                IconButton(
+                    onClick = { exitPlayer() },
+                    enabled = !exiting,
+                ) {
+                    Icon(Icons.Default.ArrowBack, contentDescription = "返回", tint = Color.White)
+                }
                 Text(
                     text = buildString {
                         append(resourceTitle.ifBlank { lineName.ifBlank { "正在播放" } })
@@ -815,16 +821,6 @@ fun PlayerScreen(
                 contentDescription = if (locked) "已锁定，点击解锁" else "未锁定，点击锁定",
                 tint = Color.White,
             )
-        }
-        // 返回按钮固定在左上角；锁定时隐藏，避免误触退出播放器。
-        if (!locked) {
-            IconButton(
-                onClick = { exitPlayer() },
-                enabled = !exiting,
-                modifier = Modifier.align(Alignment.TopStart).padding(top = 16.dp, start = 16.dp),
-            ) {
-                Icon(Icons.Default.ArrowBack, contentDescription = "返回", tint = Color.White)
-            }
         }
         gestureHint?.let { hint ->
             Row(
