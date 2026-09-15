@@ -31,8 +31,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import com.filmvault.app.data.model.MovieItem
@@ -62,15 +60,8 @@ fun HomeScreen(nav: NavController) {
                 Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                // 标题没有业务点击动作，主动消费连续点击，避免事件落到页面层造成
-                // 首页状态异常或出现只有背景色的空屏。
-                Text(
-                    "影库",
-                    style = MaterialTheme.typography.titleLarge,
-                    modifier = Modifier.padding(start = 8.dp).pointerInput(Unit) {
-                        detectTapGestures { }
-                    },
-                )
+                // 标题仅用于展示，不附加手势监听，避免连续点击时干扰页面事件分发。
+                Text("影库", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(start = 8.dp))
                 Spacer(Modifier.weight(1f))
                 IconButton(onClick = { nav.navigate("search") }) { Icon(Icons.Default.Search, contentDescription = "搜索") }
                 IconButton(onClick = { nav.navigate("library") }) { Icon(Icons.Default.Star, contentDescription = "收藏/历史") }

@@ -145,9 +145,9 @@ fun DetailScreen(nav: NavController, dir: String, id: String) {
             // 资源标签
             val res = vm.resources
             val tabTitles = listOf(
-                "磁力资源 ${res?.magnets?.size ?: 0}",
-                "网盘资源 ${res?.clouds?.size ?: 0}",
                 "在线播放 ${res?.playLines?.sumOf { it.episodes.size } ?: 0}",
+                "网盘资源 ${res?.clouds?.size ?: 0}",
+                "磁力资源 ${res?.magnets?.size ?: 0}",
             )
             TabRow(selectedTabIndex = tab) {
                 tabTitles.forEachIndexed { i, t -> Tab(selected = tab == i, onClick = { tab = i }, text = { Text(t, fontSize = MaterialTheme.typography.labelSmall.fontSize) }) }
@@ -155,18 +155,14 @@ fun DetailScreen(nav: NavController, dir: String, id: String) {
             Spacer(Modifier.height(10.dp))
 
             when (tab) {
-                0 -> MagnetList(context, vm.resources?.magnets ?: emptyList())
-                1 -> CloudList(context, vm.resources?.clouds ?: emptyList())
-                2 -> PlayList(vm.resources?.playLines ?: emptyList(), resolvingKey) { line, episode ->
+                0 -> PlayList(vm.resources?.playLines ?: emptyList(), resolvingKey) { line, episode ->
                     val key = "${line.id}/$episode"
                     if (resolvingKey != null) return@PlayList
-                    // 先锁定在线播放 Tab 并保存当前资源滚动位置，再异步解析播放地址。
-                    tab = 2
+                    tab = 0
                     detailEntry?.savedStateHandle?.set("detail_scroll_y", detailScrollState.value)
                     resolvingKey = key
                     scope.launch {
                         try {
-                            // 原生播放器不会经过网页端的历史写入逻辑，先本地记录，保证立即可见。
                             AppModule.repository.recordHistory(
                                 HistoryItem(id, dir, meta?.title ?: "未命名影片", episode, meta?.posterUrl),
                             )
@@ -190,6 +186,8 @@ fun DetailScreen(nav: NavController, dir: String, id: String) {
                         }
                     }
                 }
+                1 -> CloudList(context, vm.resources?.clouds ?: emptyList())
+                2 -> MagnetList(context, vm.resources?.magnets ?: emptyList())
             }
           }
         }
