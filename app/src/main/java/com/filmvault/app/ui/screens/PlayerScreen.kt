@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.focusable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.LockOpen
@@ -50,6 +51,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
@@ -277,6 +283,43 @@ fun PlayerScreen(
         if (!locked) controlsVisible = true
     }
 
+    fun handleKeyboardKey(keyCode: Int): Boolean {
+        if (locked) return false
+        when (keyCode) {
+            android.view.KeyEvent.KEYCODE_DPAD_LEFT,
+            android.view.KeyEvent.KEYCODE_MEDIA_REWIND -> {
+                seekToAndSyncProgress((player.currentPosition - 10_000L).coerceAtLeast(0L))
+                gestureHint = "快退 00:10"
+            }
+            android.view.KeyEvent.KEYCODE_DPAD_RIGHT,
+            android.view.KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> {
+                val target = (player.currentPosition + 10_000L).coerceAtMost(
+                    player.duration.takeIf { it > 0L } ?: Long.MAX_VALUE,
+                )
+                seekToAndSyncProgress(target)
+                gestureHint = "快进 00:10"
+            }
+            android.view.KeyEvent.KEYCODE_SPACE,
+            android.view.KeyEvent.KEYCODE_ENTER -> {
+                if (player.isPlaying) player.pause() else player.play()
+            }
+            android.view.KeyEvent.KEYCODE_DPAD_UP,
+            android.view.KeyEvent.KEYCODE_VOLUME_UP,
+            android.view.KeyEvent.KEYCODE_DPAD_DOWN,
+            android.view.KeyEvent.KEYCODE_VOLUME_DOWN -> {
+                val maxVolume = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+                val delta = if (keyCode == android.view.KeyEvent.KEYCODE_DPAD_UP || keyCode == android.view.KeyEvent.KEYCODE_VOLUME_UP) 1 else -1
+                val nextVolume = (audioManager.getStreamVolume(AudioManager.STREAM_MUSIC) + delta)
+                    .coerceIn(0, maxVolume)
+                audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, nextVolume, 0)
+                gestureHint = "音量 ${if (maxVolume > 0) nextVolume * 100 / maxVolume else 0}%"
+            }
+            else -> return false
+        }
+        gestureScope.launch { delay(900); gestureHint = null }
+        return true
+    }
+
     DisposableEffect(view) {
         val window = (view.context as? android.app.Activity)?.window
         val controller = window?.let { WindowCompat.getInsetsController(it, view) }
@@ -337,8 +380,20 @@ fun PlayerScreen(
         nav.popBackStack()
     }
 
+    val keyboardFocusRequester = remember { FocusRequester() }
+    androidx.compose.runtime.LaunchedEffect(Unit) { keyboardFocusRequester.requestFocus() }
+
     BackHandler(enabled = !exiting) { exitPlayer() }
-    Box(Modifier.fillMaxSize().background(Color.Black)) {
+    Box(
+        Modifier.fillMaxSize()
+            .background(Color.Black)
+            .focusRequester(keyboardFocusRequester)
+            .focusable()
+            .onPreviewKeyEvent { event ->
+                if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                handleKeyboardKey(event.nativeKeyEvent.keyCode)
+            },
+    ) {
         AndroidView(
             modifier = Modifier.fillMaxSize(),
             factory = { ctx ->
@@ -405,6 +460,7 @@ fun PlayerScreen(
                     setOnTouchListener { playerView, event ->
                         when (event.actionMasked) {
                             MotionEvent.ACTION_DOWN -> {
+                                playerView.requestFocus()
                                 singleTapTask?.let(playerView::removeCallbacks)
                                 startX = event.x
                                 startY = event.y
@@ -487,40 +543,8 @@ fun PlayerScreen(
                     isFocusableInTouchMode = true
                     requestFocus()
                     setOnKeyListener { _, keyCode, event ->
-                        if (locked || event.action != android.view.KeyEvent.ACTION_DOWN) return@setOnKeyListener false
-                        when (keyCode) {
-                            android.view.KeyEvent.KEYCODE_DPAD_LEFT,
-                            android.view.KeyEvent.KEYCODE_MEDIA_REWIND -> {
-                                seekToAndSyncProgress((player.currentPosition - 10_000L).coerceAtLeast(0L))
-                                showGestureHint("快退 00:10")
-                                true
-                            }
-                            android.view.KeyEvent.KEYCODE_DPAD_RIGHT,
-                            android.view.KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> {
-                                val target = (player.currentPosition + 10_000L).coerceAtMost(
-                                    player.duration.takeIf { it > 0L } ?: Long.MAX_VALUE,
-                                )
-                                seekToAndSyncProgress(target)
-                                showGestureHint("快进 00:10")
-                                true
-                            }
-                            android.view.KeyEvent.KEYCODE_SPACE,
-                            android.view.KeyEvent.KEYCODE_ENTER -> {
-                                if (player.isPlaying) player.pause() else player.play()
-                                true
-                            }
-                            android.view.KeyEvent.KEYCODE_DPAD_UP,
-                            android.view.KeyEvent.KEYCODE_VOLUME_UP -> {
-                                adjustVolume(1)
-                                true
-                            }
-                            android.view.KeyEvent.KEYCODE_DPAD_DOWN,
-                            android.view.KeyEvent.KEYCODE_VOLUME_DOWN -> {
-                                adjustVolume(-1)
-                                true
-                            }
-                            else -> false
-                        }
+                        if (event.action != android.view.KeyEvent.ACTION_DOWN) return@setOnKeyListener false
+                        handleKeyboardKey(keyCode)
                     }
                 }
             },
