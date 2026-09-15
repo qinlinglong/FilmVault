@@ -9,6 +9,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Search
@@ -27,6 +29,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.text.input.ImeAction
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import com.filmvault.app.ui.components.PosterGrid
@@ -40,6 +43,13 @@ fun SearchScreen(nav: NavController) {
     var selectedType by remember { mutableStateOf(Constants.SEARCH_CATEGORIES.first()) }
     var selectedMode by remember { mutableStateOf(Constants.SEARCH_MODES.first()) }
 
+    fun submitSearch() {
+        vm.searchQuery = query.trim()
+        vm.searchType = selectedType.first
+        vm.searchMode = selectedMode.first
+        vm.refresh()
+    }
+
     Column(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = { nav.popBackStack() }) {
@@ -51,13 +61,12 @@ fun SearchScreen(nav: NavController) {
                 placeholder = { Text("搜索影片 / 演员") },
                 singleLine = true,
                 trailingIcon = {
-                    IconButton(onClick = {
-                        vm.searchQuery = query
-                        vm.searchType = selectedType.first
-                        vm.searchMode = selectedMode.first
-                        vm.refresh()
-                    }) { Icon(Icons.Default.Search, contentDescription = "搜索") }
+                    IconButton(onClick = { submitSearch() }) {
+                        Icon(Icons.Default.Search, contentDescription = "搜索")
+                    }
                 },
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                keyboardActions = KeyboardActions(onSearch = { submitSearch() }, onDone = { submitSearch() }),
                 modifier = Modifier.weight(1f).padding(end = 8.dp),
             )
         }
