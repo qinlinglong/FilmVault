@@ -502,7 +502,6 @@ fun PlayerScreen(
                                     kotlin.math.abs(deltaY) > kotlin.math.abs(deltaX) * 1.2f
                                 if (horizontalSeeking) {
                                     seekToAndSyncProgress((seekStartPosition + seekDeltaMs).coerceAtLeast(0L))
-                                    showGestureHint(if (seekDeltaMs >= 0L) "快进完成" else "快退完成")
                                     lastTapAt = 0L
                                 } else if (isVerticalGesture) {
                                     updateGestureValue(deltaY, startX, playerView.width)
