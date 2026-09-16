@@ -220,7 +220,13 @@ class CatalogViewModel(
                     repo.getList(dir, page, filters.toMap())
                 }
                 totalPages = result.second
-                items = if (reset) result.first else items + result.first
+                items = if (reset) {
+                    result.first
+                } else {
+                    // 某些站点分页边界会重复上一页最后几条，合并时去重，
+                    // 避免列表闪烁及无意义的重复请求。
+                    (items + result.first).distinctBy { "${it.dir}/${it.id}" }
+                }
                 if (items.isEmpty()) error = "暂无数据，请点击重试"
             } catch (e: Exception) {
                 error = "加载失败：${e.message}"

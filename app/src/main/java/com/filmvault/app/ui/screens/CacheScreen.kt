@@ -1,5 +1,6 @@
 package com.filmvault.app.ui.screens
 
+import android.net.Uri
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -82,9 +83,25 @@ fun CacheScreen(nav: NavController) {
                                 Text(if (expanded) "收起" else "查看详情", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
                             }
                             if (expanded) groupEntries.forEach { entry ->
-                                Row(Modifier.fillMaxWidth().padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Row(
+                                    Modifier.fillMaxWidth().padding(top = 12.dp).clickable {
+                                        val local = OfflineMediaStore.cachedUri(context, "", entry.cacheKey)
+                                        if (local != null) {
+                                            val parts = entry.cacheKey.split('/')
+                                            val lineId = parts.getOrNull(3).orEmpty()
+                                            val episode = parts.getOrNull(4)?.toIntOrNull() ?: 1
+                                            nav.navigate(
+                                                "player/${Uri.encode(local.toString())}?lineId=${Uri.encode(lineId)}&episode=$episode&episodeCount=1&lineName=&resourceTitle=${Uri.encode(title)}&cacheKey=${Uri.encode(entry.cacheKey)}",
+                                            )
+                                        }
+                                    },
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
                                     Column(Modifier.weight(1f)) {
-                                        Text(entry.label.removePrefix("$title · "), style = MaterialTheme.typography.bodyMedium)
+                                        Text(
+                                            entry.label.removePrefix("$title · "),
+                                            style = MaterialTheme.typography.bodyMedium,
+                                        )
                                         Text(
                                             "${if (entry.completed) "已完成" else "已暂停，可继续"} · ${formatBytes(entry.bytes)} · ${entry.file.extension.uppercase()}",
                                             style = MaterialTheme.typography.bodySmall,

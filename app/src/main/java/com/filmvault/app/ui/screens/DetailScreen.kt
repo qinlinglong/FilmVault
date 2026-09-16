@@ -352,25 +352,37 @@ fun DetailScreen(nav: NavController, dir: String, id: String) {
                     resolvingKey = key
                     scope.launch {
                         try {
+                            val cacheKey = resourceCacheKey(line, episode)
                             AppModule.repository.recordHistory(
                                 HistoryItem(id, dir, meta?.title ?: "未命名影片", episode, meta?.posterUrl),
                             )
-                            val directUrl = runCatching {
-                                AppModule.repository.resolvePlayUrl(line.id, episode)
-                            }.getOrNull()
-                            if (directUrl != null) {
+                            val localUri = OfflineMediaStore.cachedUri(context, "", cacheKey)
+                            if (localUri != null) {
                                 nav.navigate(
-                                    "player/${Uri.encode(directUrl)}" +
+                                    "player/${Uri.encode(localUri.toString())}" +
                                         "?lineId=${Uri.encode(line.id)}" +
                                         "&episode=$episode" +
                                         "&episodeCount=${line.episodes.size}" +
                                         "&lineName=${Uri.encode(line.name)}" +
                                         "&resourceTitle=${Uri.encode(meta?.title.orEmpty())}" +
-                                        "&cacheKey=${Uri.encode(resourceCacheKey(line, episode))}",
+                                        "&cacheKey=${Uri.encode(cacheKey)}",
                                 )
                             } else {
-                                Toast.makeText(context, "未解析到直链，已尝试打开在线播放页", Toast.LENGTH_SHORT).show()
-                                Playback.openUrl(context, "${AppModule.siteSettings.siteUrlNow}/py/${line.id}/$episode")
+                                val directUrl = runCatching { AppModule.repository.resolvePlayUrl(line.id, episode) }.getOrNull()
+                                if (directUrl != null) {
+                                    nav.navigate(
+                                        "player/${Uri.encode(directUrl)}" +
+                                            "?lineId=${Uri.encode(line.id)}" +
+                                            "&episode=$episode" +
+                                            "&episodeCount=${line.episodes.size}" +
+                                            "&lineName=${Uri.encode(line.name)}" +
+                                            "&resourceTitle=${Uri.encode(meta?.title.orEmpty())}" +
+                                            "&cacheKey=${Uri.encode(cacheKey)}",
+                                    )
+                                } else {
+                                    Toast.makeText(context, "未解析到直链，已尝试打开在线播放页", Toast.LENGTH_SHORT).show()
+                                    Playback.openUrl(context, "${AppModule.siteSettings.siteUrlNow}/py/${line.id}/$episode")
+                                }
                             }
                         } finally {
                             resolvingKey = null
@@ -381,6 +393,7 @@ fun DetailScreen(nav: NavController, dir: String, id: String) {
                     context = context,
                     lines = vm.resources?.playLines.orEmpty(),
                     cacheRevision = cacheRevision,
+                    cacheKey = { line, episode -> resourceCacheKey(line, episode) },
                     onPlay = { line, episode ->
                         val local = OfflineMediaStore.cachedUri(context, "", resourceCacheKey(line, episode))
                         if (local != null) nav.navigate(
@@ -503,15 +516,16 @@ private fun LocalPlayList(
     context: android.content.Context,
     lines: List<com.filmvault.app.data.model.PlayLine>,
     cacheRevision: Int,
+    cacheKey: (line: com.filmvault.app.data.model.PlayLine, episode: Int) -> String,
     onPlay: (line: com.filmvault.app.data.model.PlayLine, episode: Int) -> Unit,
 ) {
     @Suppress("UNUSED_VARIABLE") val revision = cacheRevision
-    val cachedLines = lines.filter { line -> line.episodes.withIndex().any { (index, _) -> OfflineMediaStore.isCached(context, OfflineMediaStore.resourceKey("", "", line.id, index + 1)) } }
+    val cachedLines = lines.filter { line -> line.episodes.withIndex().any { (index, _) -> OfflineMediaStore.isCached(context, cacheKey(line, index + 1)) } }
     if (cachedLines.isEmpty()) EmptyHint("暂无本地缓存资源")
     cachedLines.forEach { line ->
         Text(line.name, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, modifier = Modifier.padding(vertical = 6.dp))
         line.episodes.forEachIndexed { index, episode ->
-            if (OfflineMediaStore.isCached(context, OfflineMediaStore.resourceKey("", "", line.id, index + 1))) {
+            if (OfflineMediaStore.isCached(context, cacheKey(line, index + 1))) {
                 ResourceRow(title = episode.ifBlank { "本地资源" }, cached = true, onClick = { onPlay(line, index + 1) })
             }
         }

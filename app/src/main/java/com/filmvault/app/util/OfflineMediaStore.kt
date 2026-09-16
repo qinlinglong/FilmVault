@@ -14,7 +14,7 @@ import java.util.Properties
 
 /** 应用私有离线缓存：渐进式媒体直接保存，未加密 HLS 保存清单和分片。 */
 object OfflineMediaStore {
-    data class CacheEntry(val sourceUrl: String, val label: String, val file: File, val detailRoute: String = "", val completed: Boolean = true) {
+    data class CacheEntry(val sourceUrl: String, val label: String, val file: File, val detailRoute: String = "", val completed: Boolean = true, val cacheKey: String = "") {
         val bytes: Long get() = file.parentFile?.walkTopDown()?.filter { it.isFile }?.sumOf { it.length() } ?: file.length()
     }
 
@@ -75,7 +75,14 @@ object OfflineMediaStore {
         val media = directory.walkTopDown().firstOrNull { it.isFile && it.name != METADATA && it.length() > 0L } ?: return@mapNotNull null
         val properties = Properties()
         File(directory, METADATA).takeIf { it.isFile }?.inputStream()?.use(properties::load)
-        CacheEntry(properties.getProperty("url", ""), properties.getProperty("label", media.name), media, properties.getProperty("detailRoute", ""), properties.getProperty("complete", "false") == "true")
+        CacheEntry(
+            sourceUrl = properties.getProperty("url", ""),
+            label = properties.getProperty("label", media.name),
+            file = media,
+            detailRoute = properties.getProperty("detailRoute", ""),
+            completed = properties.getProperty("complete", "false") == "true",
+            cacheKey = properties.getProperty("cacheKey", ""),
+        )
     }.sortedByDescending { it.file.parentFile?.lastModified() ?: it.file.lastModified() }
 
     fun delete(entry: CacheEntry): Boolean = entry.file.parentFile?.deleteRecursively() == true

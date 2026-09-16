@@ -13,7 +13,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.snapshotFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -63,7 +63,9 @@ fun PosterGrid(
         state = state,
         modifier = modifier.fillMaxWidth(),
     ) {
-        items(items, key = { "${it.dir}/${it.id}" }) { item ->
+        // 分页接口偶尔会在相邻页返回同一资源；不能只用资源 id 作为 key，
+        // 否则 Compose LazyGrid 会因重复 key 在翻页时直接抛异常退出。
+        itemsIndexed(items, key = { index, item -> "${item.dir}/${item.id}#$index" }) { _, item ->
             MovieCard(item = item, modifier = Modifier.fillMaxWidth(), onClick = { onItemClick(item) })
         }
     }
