@@ -21,6 +21,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.navArgument
 import com.filmvault.app.di.AppModule
 import com.filmvault.app.ui.screens.CatalogScreen
+import com.filmvault.app.ui.screens.CacheScreen
 import com.filmvault.app.ui.screens.AboutScreen
 import com.filmvault.app.ui.screens.DetailScreen
 import com.filmvault.app.ui.screens.HomeScreen
@@ -50,6 +51,7 @@ fun AppNavHost(startDestination: String = "auth") {
         composable("search") { SearchScreen(nav) }
         composable("library") { LibraryScreen(nav) }
         composable("settings") { SettingsScreen(nav) }
+        composable("cache") { CacheScreen(nav) }
         composable("about") { AboutScreen(nav) }
         composable(
             route = "catalog/{dir}?sort={sort}&year={year}",

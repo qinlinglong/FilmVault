@@ -28,6 +28,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
@@ -37,6 +38,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -77,6 +79,8 @@ fun DetailScreen(nav: NavController, dir: String, id: String) {
     var cacheSelectionMode by rememberSaveable { mutableStateOf(false) }
     var selectedEpisodes by remember { mutableStateOf(setOf<String>()) }
     var cachingEpisodes by remember { mutableStateOf(false) }
+    var cacheProgress by remember { mutableFloatStateOf(0f) }
+    var cacheStatusText by remember { mutableStateOf("") }
 
     LaunchedEffect(detailScrollState, detailEntry) {
         snapshotFlow { detailScrollState.value }.collect { scrollY ->
@@ -110,30 +114,44 @@ fun DetailScreen(nav: NavController, dir: String, id: String) {
                             val selected = selectedEpisodes.toSet()
                             val lines = vm.resources?.playLines.orEmpty()
                             cachingEpisodes = true
+                            cacheProgress = 0f
+                            cacheStatusText = "正在解析并缓存 ${selected.size} 个资源…"
+                            Toast.makeText(context, cacheStatusText, Toast.LENGTH_SHORT).show()
                             scope.launch {
                                 var success = 0
                                 var failed = 0
-                                selected.forEach { key ->
+                                selected.forEachIndexed { selectedIndex, key ->
                                     val parts = key.split("/", limit = 2)
                                     val line = lines.firstOrNull { it.id == parts.getOrNull(0) }
                                     val episode = parts.getOrNull(1)?.toIntOrNull()
                                     if (line == null || episode == null) {
                                         failed++
-                                        return@forEach
+                                        return@forEachIndexed
                                     }
                                     runCatching {
                                         val directUrl = AppModule.repository.resolvePlayUrl(line.id, episode)
                                             ?: error("未解析到播放地址")
                                         val referer = "${AppModule.siteSettings.siteUrlNow}/py/${line.id}/$episode"
-                                        OfflineMediaStore.download(context, directUrl, referer)
+                                        cacheStatusText = "正在缓存 ${selectedIndex + 1}/${selected.size}：${meta?.title.orEmpty()} 第${episode}集"
+                                        OfflineMediaStore.download(
+                                            context,
+                                            directUrl,
+                                            referer,
+                                            "${meta?.title.orEmpty()} · ${line.name} · 第${episode}集",
+                                        ) { downloaded, total ->
+                                            val itemProgress = if (total > 0L) downloaded.toFloat() / total else 0f
+                                            cacheProgress = ((selectedIndex + itemProgress) / selected.size).coerceIn(0f, 1f)
+                                        }
                                     }.onSuccess { success++ }.onFailure { failed++ }
                                 }
                                 cachingEpisodes = false
+                                cacheProgress = if (failed == 0) 1f else cacheProgress
+                                cacheStatusText = if (failed == 0) "缓存完成：$success 个资源" else "缓存完成：成功 $success 个，失败 $failed 个"
                                 cacheSelectionMode = false
                                 selectedEpisodes = emptySet()
                                 Toast.makeText(
                                     context,
-                                    if (failed == 0) "已缓存 $success 个资源，可离线播放" else "已缓存 $success 个，失败 $failed 个",
+                                    cacheStatusText,
                                     Toast.LENGTH_LONG,
                                 ).show()
                             }
@@ -221,6 +239,14 @@ fun DetailScreen(nav: NavController, dir: String, id: String) {
                 }
             }
             Spacer(Modifier.height(10.dp))
+
+            if (cachingEpisodes || cacheStatusText.isNotBlank()) {
+                Text(cacheStatusText, style = MaterialTheme.typography.bodySmall)
+                if (cachingEpisodes) {
+                    LinearProgressIndicator(progress = { cacheProgress }, modifier = Modifier.fillMaxWidth().padding(top = 6.dp))
+                }
+                Spacer(Modifier.height(8.dp))
+            }
 
             when (tab) {
                 0 -> PlayList(

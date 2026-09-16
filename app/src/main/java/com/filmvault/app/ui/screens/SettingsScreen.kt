@@ -61,6 +61,24 @@ fun SettingsScreen(nav: NavController) {
                 Surface(
                     shape = MaterialTheme.shapes.medium,
                     color = MaterialTheme.colorScheme.surfaceVariant,
+                    modifier = Modifier.fillMaxWidth().clickable { nav.navigate("cache") },
+                ) {
+                    Column(Modifier.padding(14.dp)) {
+                        Text("缓存管理", style = MaterialTheme.typography.titleSmall)
+                        Text(
+                            "查看缓存资源、大小和下载结果，支持删除",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
+                            modifier = Modifier.padding(top = 4.dp),
+                        )
+                    }
+                }
+            }
+
+            item {
+                Surface(
+                    shape = MaterialTheme.shapes.medium,
+                    color = MaterialTheme.colorScheme.surfaceVariant,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     Column(Modifier.padding(14.dp)) {
