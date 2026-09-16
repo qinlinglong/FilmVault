@@ -411,4 +411,8 @@ class SettingsViewModel : ViewModel() {
     fun remove(url: String) {
         viewModelScope.launch { settings.removeSite(url) }
     }
+
+    fun logout() {
+        AppModule.repository.logout()
+    }
 }

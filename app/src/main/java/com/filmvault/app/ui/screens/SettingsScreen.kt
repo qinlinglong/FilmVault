@@ -76,6 +76,21 @@ fun SettingsScreen(nav: NavController) {
             }
 
             item {
+                Button(
+                    onClick = {
+                        vm.logout()
+                        nav.navigate("login") {
+                            popUpTo("home") { inclusive = true }
+                            launchSingleTop = true
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text("退出登录")
+                }
+            }
+
+            item {
                 Surface(
                     shape = MaterialTheme.shapes.medium,
                     color = MaterialTheme.colorScheme.surfaceVariant,
