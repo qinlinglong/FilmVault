@@ -166,6 +166,7 @@ fun PosterImage(
     contentDescription: String?,
     modifier: Modifier = Modifier,
     contentScale: ContentScale = ContentScale.Crop,
+    onError: (() -> Unit)? = null,
 ) {
     val context = LocalContext.current
     val request = remember(url) {
@@ -181,5 +182,6 @@ fun PosterImage(
         contentScale = contentScale,
         placeholder = ColorPainter(MaterialTheme.colorScheme.surfaceVariant),
         error = ColorPainter(MaterialTheme.colorScheme.surfaceVariant),
+        onError = { onError?.invoke() },
     )
 }

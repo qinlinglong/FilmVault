@@ -47,6 +47,9 @@ class FilmRepository(
         }
     }
 
+    suspend fun getDetailPoster(dir: String, id: String, title: String): String? =
+        api.getDetailMeta(dir, id, title).posterUrl
+
     suspend fun getHistory(): List<com.filmvault.app.data.model.HistoryItem> = api.getHistory()
 
     val history: Flow<List<com.filmvault.app.data.model.HistoryItem>> = historyStore.history
@@ -55,7 +58,7 @@ class FilmRepository(
 
     /** 合并服务器历史到本地，服务器暂时不可用时仍保留本地历史。 */
     suspend fun syncHistory() {
-        runCatching { getHistory() }.getOrNull()?.forEach { historyStore.add(it) }
+        runCatching { getHistory() }.getOrNull()?.let { historyStore.mergeRemote(it) }
     }
 
     /** 收藏：本地 + 服务器双向写入 */

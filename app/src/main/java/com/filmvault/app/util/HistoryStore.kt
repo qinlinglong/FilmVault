@@ -35,5 +35,28 @@ class HistoryStore(private val context: Context) {
         }
     }
 
+    /** 合并服务端历史，保留本地真实点击时间，避免同步时把顺序全部改成同步时间。 */
+    suspend fun mergeRemote(remote: List<HistoryItem>) {
+        if (remote.isEmpty()) return
+        context.dataStore.edit { prefs ->
+            val old = prefs[key]?.let { runCatching { json.decodeFromString<List<HistoryItem>>(it) }.getOrNull() }
+                ?: emptyList()
+            val oldByKey = old.associateBy { historyKey(it) }
+            val now = System.currentTimeMillis()
+            val synced = remote.mapIndexed { index, item ->
+                val previous = oldByKey[historyKey(item)]
+                item.copy(
+                    posterUrl = item.posterUrl ?: previous?.posterUrl,
+                    watchedAt = previous?.watchedAt?.takeIf { it > 0L } ?: (now - index),
+                )
+            }
+            val remoteKeys = synced.mapTo(mutableSetOf()) { historyKey(it) }
+            val localOnly = old.filterNot { historyKey(it) in remoteKeys }
+            prefs[key] = json.encodeToString((synced + localOnly).sortedByDescending { it.watchedAt }.take(100))
+        }
+    }
+
     suspend fun current(): List<HistoryItem> = history.first()
+
+    private fun historyKey(item: HistoryItem): String = "${item.dir}/${item.id}/${item.episode ?: 0}"
 }

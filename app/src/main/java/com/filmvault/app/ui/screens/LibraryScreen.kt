@@ -29,7 +29,10 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.clip
@@ -44,6 +47,7 @@ import com.filmvault.app.util.FavEntry
 import com.filmvault.app.viewmodel.LibraryViewModel
 import com.filmvault.app.ui.components.MainBottomBar
 import com.filmvault.app.ui.components.PosterImage
+import kotlinx.coroutines.launch
 
 @Composable
 fun LibraryScreen(nav: NavController) {
@@ -113,8 +117,11 @@ private fun FavRow(item: FavEntry, onClick: () -> Unit) {
         modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
     ) {
         Row(Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
-            PosterImage(
+            LibraryPosterImage(
                 url = item.posterUrl,
+                dir = item.dir,
+                id = item.id,
+                title = item.title,
                 contentDescription = item.title,
                 modifier = Modifier.width(56.dp).height(80.dp).clip(RoundedCornerShape(6.dp)),
                 contentScale = ContentScale.Crop,
@@ -135,8 +142,11 @@ private fun HistRow(item: HistoryItem, onClick: () -> Unit) {
         modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
     ) {
         Row(Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
-            PosterImage(
+            LibraryPosterImage(
                 url = item.posterUrl,
+                dir = item.dir,
+                id = item.id,
+                title = item.title,
                 contentDescription = item.title,
                 modifier = Modifier.width(56.dp).height(80.dp).clip(RoundedCornerShape(6.dp)),
                 contentScale = ContentScale.Crop,
@@ -147,4 +157,39 @@ private fun HistRow(item: HistoryItem, onClick: () -> Unit) {
             }
         }
     }
+}
+
+@Composable
+private fun LibraryPosterImage(
+    url: String?,
+    dir: String,
+    id: String,
+    title: String,
+    contentDescription: String?,
+    modifier: Modifier,
+    contentScale: ContentScale,
+) {
+    var resolvedUrl by remember(dir, id, url) { mutableStateOf(url) }
+    var fallbackRequested by remember(dir, id, url) { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+
+    fun requestFallback() {
+        if (fallbackRequested) return
+        fallbackRequested = true
+        scope.launch {
+            val fallback = runCatching { AppModule.repository.getDetailPoster(dir, id, title) }.getOrNull()
+            if (!fallback.isNullOrBlank() && fallback != resolvedUrl) resolvedUrl = fallback
+        }
+    }
+
+    LaunchedEffect(dir, id, url) {
+        if (resolvedUrl.isNullOrBlank()) requestFallback()
+    }
+    PosterImage(
+        url = resolvedUrl,
+        contentDescription = contentDescription,
+        modifier = modifier,
+        contentScale = contentScale,
+        onError = { requestFallback() },
+    )
 }
