@@ -27,7 +27,8 @@ class HistoryStore(private val context: Context) {
         context.dataStore.edit { prefs ->
             val old = prefs[key]?.let { runCatching { json.decodeFromString<List<HistoryItem>>(it) }.getOrNull() }
                 ?: emptyList()
-            val list = (listOf(item) + old.filterNot {
+            val current = item.copy(watchedAt = item.watchedAt.takeIf { it > 0L } ?: System.currentTimeMillis())
+            val list = (listOf(current) + old.filterNot {
                 it.id == item.id && it.dir == item.dir && it.episode == item.episode
             }).take(100)
             prefs[key] = json.encodeToString(list)

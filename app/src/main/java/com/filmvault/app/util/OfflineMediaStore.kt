@@ -24,6 +24,7 @@ object OfflineMediaStore {
         val completed: Boolean = true,
         val cacheKey: String = "",
         val referer: String = "",
+        val posterUrl: String? = null,
         val downloaded: Long = 0L,
         val total: Long = 0L,
         val state: String = if (completed) "completed" else "paused",
@@ -35,21 +36,21 @@ object OfflineMediaStore {
 
     private val activeJobs = mutableMapOf<String, Job>()
 
-    suspend fun download(context: Context, sourceUrl: String, referer: String = AppModule.siteSettings.siteUrlNow, label: String = "", cacheKey: String = "", detailRoute: String = "", onProgress: (Long, Long) -> Unit = { _, _ -> }): File = withContext(Dispatchers.IO) {
+    suspend fun download(context: Context, sourceUrl: String, referer: String = AppModule.siteSettings.siteUrlNow, label: String = "", cacheKey: String = "", detailRoute: String = "", posterUrl: String? = null, onProgress: (Long, Long) -> Unit = { _, _ -> }): File = withContext(Dispatchers.IO) {
         require(sourceUrl.isNotBlank()) { "播放地址为空" }
         cachedFile(context, sourceUrl, cacheKey)?.let { return@withContext it }
         val taskKey = cacheKey.ifBlank { sourceUrl }
         val taskJob = coroutineContext[Job]
         synchronized(activeJobs) { if (taskJob != null) activeJobs[taskKey] = taskJob }
         val directory = File(cacheRoot(context), sourceKey(cacheKey.ifBlank { sourceUrl })).apply { mkdirs() }
-        writeMetadata(context, sourceUrl, referer, cacheKey, detailRoute, label, complete = false, state = "downloading", downloaded = 0L, total = 0L)
+        writeMetadata(context, sourceUrl, referer, cacheKey, detailRoute, label, posterUrl, complete = false, state = "downloading", downloaded = 0L, total = 0L)
         var lastPersistAt = 0L
         var lastPersistBytes = 0L
         fun report(downloaded: Long, total: Long) {
             onProgress(downloaded, total)
             val now = System.currentTimeMillis()
             if (downloaded == total || now - lastPersistAt >= 500L || downloaded - lastPersistBytes >= 256L * 1024L) {
-                writeMetadata(context, sourceUrl, referer, cacheKey, detailRoute, label, complete = false, state = "downloading", downloaded = downloaded, total = total)
+                writeMetadata(context, sourceUrl, referer, cacheKey, detailRoute, label, posterUrl, complete = false, state = "downloading", downloaded = downloaded, total = total)
                 lastPersistAt = now
                 lastPersistBytes = downloaded
             }
@@ -90,13 +91,13 @@ object OfflineMediaStore {
                     responseForStream?.close()
                     file
                 }
-                writeMetadata(context, sourceUrl, referer, cacheKey, detailRoute, label, complete = true, state = "completed", downloaded = outputBytes(output), total = outputBytes(output))
+                writeMetadata(context, sourceUrl, referer, cacheKey, detailRoute, label, posterUrl, complete = true, state = "completed", downloaded = outputBytes(output), total = outputBytes(output))
                 output
             }
         } catch (error: Throwable) {
             val state = if (error is CancellationException) "paused" else "failed"
             val current = list(context).firstOrNull { it.cacheKey == cacheKey }
-            writeMetadata(context, sourceUrl, referer, cacheKey, detailRoute, label, complete = false, state = state, downloaded = current?.bytes ?: 0L, total = current?.total ?: 0L)
+            writeMetadata(context, sourceUrl, referer, cacheKey, detailRoute, label, posterUrl ?: current?.posterUrl, complete = false, state = state, downloaded = current?.bytes ?: 0L, total = current?.total ?: 0L)
             throw error
         } finally {
             synchronized(activeJobs) { if (activeJobs[taskKey] == taskJob) activeJobs.remove(taskKey) }
@@ -111,9 +112,9 @@ object OfflineMediaStore {
     }
 
     /** 先登记队列任务，保证等待中的资源也会出现在缓存管理。 */
-    fun enqueue(context: Context, label: String, cacheKey: String, detailRoute: String, referer: String = AppModule.siteSettings.siteUrlNow): Boolean {
+    fun enqueue(context: Context, label: String, cacheKey: String, detailRoute: String, referer: String = AppModule.siteSettings.siteUrlNow, posterUrl: String? = null): Boolean {
         if (list(context).any { it.cacheKey == cacheKey }) return false
-        writeMetadata(context, "", referer, cacheKey, detailRoute, label, complete = false, state = "queued", downloaded = 0L, total = 0L)
+        writeMetadata(context, "", referer, cacheKey, detailRoute, label, posterUrl, complete = false, state = "queued", downloaded = 0L, total = 0L)
         return true
     }
 
@@ -133,6 +134,7 @@ object OfflineMediaStore {
             completed = properties.getProperty("complete", "false") == "true",
             cacheKey = properties.getProperty("cacheKey", ""),
             referer = properties.getProperty("referer", ""),
+            posterUrl = properties.getProperty("posterUrl", "").ifBlank { null },
             downloaded = properties.getProperty("downloaded", "0").toLongOrNull() ?: 0L,
             total = properties.getProperty("total", "0").toLongOrNull() ?: 0L,
             state = properties.getProperty("state", if (properties.getProperty("complete") == "true") "completed" else "paused"),
@@ -201,10 +203,11 @@ object OfflineMediaStore {
     private const val METADATA = "metadata.properties"
     private fun cacheRoot(context: Context): File = File(context.filesDir, "offline-media")
     fun resourceKey(dir: String, id: String, lineId: String, episode: Int): String = "play/$dir/$id/$lineId/$episode"
-    private fun writeMetadata(context: Context, sourceUrl: String, referer: String, cacheKey: String, detailRoute: String, label: String, complete: Boolean, state: String, downloaded: Long, total: Long) {
+    private fun writeMetadata(context: Context, sourceUrl: String, referer: String, cacheKey: String, detailRoute: String, label: String, posterUrl: String?, complete: Boolean, state: String, downloaded: Long, total: Long) {
         val properties = Properties().apply {
             setProperty("url", sourceUrl); setProperty("referer", referer); setProperty("cacheKey", cacheKey)
             setProperty("detailRoute", detailRoute); setProperty("label", label); setProperty("complete", complete.toString())
+            setProperty("posterUrl", posterUrl.orEmpty())
             setProperty("state", state); setProperty("downloaded", downloaded.toString()); setProperty("total", total.toString())
         }
         File(cacheRoot(context), sourceKey(cacheKey.ifBlank { sourceUrl })).apply { mkdirs() }.resolve(METADATA).outputStream().use { output -> properties.store(output, null) }

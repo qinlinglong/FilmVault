@@ -90,6 +90,7 @@ data class HistoryItem(
     val title: String,
     val episode: Int? = null,
     val posterUrl: String? = null,
+    val watchedAt: Long = 0L,
 )
 
 /** 登录结果 */

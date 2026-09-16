@@ -136,6 +136,7 @@ fun DetailScreen(nav: NavController, dir: String, id: String, localOnly: Boolean
                     "${meta?.title.orEmpty()} · ${line.name} · 第${episode}集",
                     key,
                     "detail/$dir/$id",
+                    posterUrl = meta?.posterUrl,
                 ) { downloaded, total ->
                     liveProgress[key] = downloaded to total
                     cacheDownloaded = downloaded
@@ -211,6 +212,7 @@ fun DetailScreen(nav: NavController, dir: String, id: String, localOnly: Boolean
                                             resourceCacheKey(line, episode),
                                             "detail/$dir/$id",
                                             "${AppModule.siteSettings.siteUrlNow}/py/${line.id}/$episode",
+                                            meta?.posterUrl,
                                         )
                                     }
                                     val gate = Semaphore(3)
@@ -231,6 +233,7 @@ fun DetailScreen(nav: NavController, dir: String, id: String, localOnly: Boolean
                                                 "${meta?.title.orEmpty()} · ${line.name} · 第${episode}集",
                                                 resourceCacheKey(line, episode),
                                                 "detail/$dir/$id",
+                                                posterUrl = meta?.posterUrl,
                                             ) { downloaded, total ->
                                                 liveProgress[resourceCacheKey(line, episode)] = downloaded to total
                                                 cacheDownloaded = downloaded
@@ -491,8 +494,15 @@ private fun ResourceRow(
         modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).combinedClickable(onClick = onClick, onLongClick = onLongClick),
     ) {
         Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-            if (selectionEnabled) {
+            if (selectionEnabled && !cached) {
                 Checkbox(checked = selected, onCheckedChange = null)
+                Spacer(Modifier.width(4.dp))
+            } else if (selectionEnabled && cached) {
+                Icon(
+                    Icons.Filled.DownloadDone,
+                    contentDescription = "已缓存",
+                    tint = MaterialTheme.colorScheme.primary,
+                )
                 Spacer(Modifier.width(4.dp))
             }
             Column(Modifier.weight(1f)) {

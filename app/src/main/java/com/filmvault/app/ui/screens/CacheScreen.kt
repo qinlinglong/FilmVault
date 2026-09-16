@@ -6,7 +6,9 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -28,10 +30,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.navigation.NavController
+import com.filmvault.app.ui.components.PosterImage
 import com.filmvault.app.util.OfflineMediaStore
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
@@ -82,6 +88,13 @@ fun CacheScreen(nav: NavController) {
                     ) {
                         Column(Modifier.fillMaxWidth().padding(14.dp)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
+                                PosterImage(
+                                    url = groupEntries.firstOrNull { !it.posterUrl.isNullOrBlank() }?.posterUrl,
+                                    contentDescription = title,
+                                    modifier = Modifier.width(56.dp).height(80.dp).clip(RoundedCornerShape(6.dp)),
+                                    contentScale = ContentScale.Crop,
+                                )
+                                androidx.compose.foundation.layout.Spacer(Modifier.width(12.dp))
                                 Column(Modifier.weight(1f)) {
                                     Text(title, style = MaterialTheme.typography.bodyLarge)
                                     Text(
