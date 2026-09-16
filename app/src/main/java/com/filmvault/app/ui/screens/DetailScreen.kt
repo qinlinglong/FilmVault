@@ -220,34 +220,40 @@ fun DetailScreen(nav: NavController, dir: String, id: String, localOnly: Boolean
                                         tasks.mapIndexed { taskIndex, (line, episode) ->
                                             async {
                                                 gate.withPermit {
-                                                    try {
-                                            val directUrl = AppModule.repository.resolvePlayUrl(line.id, episode)
-                                                ?: error("未解析到播放地址")
-                                            val referer = "${AppModule.siteSettings.siteUrlNow}/py/${line.id}/$episode"
-                                            pausedEpisode = line to episode
-                                            cacheStatusText = "正在缓存（最多 3 个并行）${taskIndex + 1}/${tasks.size}：${meta?.title.orEmpty()} 第${episode}集"
-                                            OfflineMediaStore.download(
-                                                context,
-                                                directUrl,
-                                                referer,
-                                                "${meta?.title.orEmpty()} · ${line.name} · 第${episode}集",
-                                                resourceCacheKey(line, episode),
-                                                "detail/$dir/$id",
-                                                posterUrl = meta?.posterUrl,
-                                            ) { downloaded, total ->
-                                                liveProgress[resourceCacheKey(line, episode)] = downloaded to total
-                                                cacheDownloaded = downloaded
-                                                cacheTotal = total
-                                                val finished = liveProgress.values.count { (done, size) -> size > 0L && done >= size }
-                                                cacheProgress = (finished.toFloat() / tasks.size.coerceAtLeast(1)).coerceIn(0f, 1f)
-                                            }
-                                            true
-                                                    } catch (error: CancellationException) {
-                                                        throw error
-                                                    } catch (_: Throwable) {
-                                                        OfflineMediaStore.markFailed(context, resourceCacheKey(line, episode))
-                                                        false
+                                                    var success = false
+                                                    var attempt = 0
+                                                    while (!success && attempt < 3) {
+                                                        try {
+                                                            val directUrl = AppModule.repository.resolvePlayUrl(line.id, episode)
+                                                                ?: error("未解析到播放地址")
+                                                            val referer = "${AppModule.siteSettings.siteUrlNow}/py/${line.id}/$episode"
+                                                            pausedEpisode = line to episode
+                                                            cacheStatusText = "正在缓存（最多 3 个并行）${taskIndex + 1}/${tasks.size}：${meta?.title.orEmpty()} 第${episode}集"
+                                                            OfflineMediaStore.download(
+                                                                context,
+                                                                directUrl,
+                                                                referer,
+                                                                "${meta?.title.orEmpty()} · ${line.name} · 第${episode}集",
+                                                                resourceCacheKey(line, episode),
+                                                                "detail/$dir/$id",
+                                                                posterUrl = meta?.posterUrl,
+                                                            ) { downloaded, total ->
+                                                                liveProgress[resourceCacheKey(line, episode)] = downloaded to total
+                                                                cacheDownloaded = downloaded
+                                                                cacheTotal = total
+                                                                val finished = liveProgress.values.count { (done, size) -> size > 0L && done >= size }
+                                                                cacheProgress = (finished.toFloat() / tasks.size.coerceAtLeast(1)).coerceIn(0f, 1f)
+                                                            }
+                                                            success = true
+                                                        } catch (error: CancellationException) {
+                                                            throw error
+                                                        } catch (_: Throwable) {
+                                                            attempt++
+                                                            if (attempt < 3) delay(attempt * 800L)
+                                                        }
                                                     }
+                                                    if (!success) OfflineMediaStore.markFailed(context, resourceCacheKey(line, episode))
+                                                    success
                                                 }
                                             }
                                         }

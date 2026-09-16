@@ -58,7 +58,7 @@ fun CacheScreen(nav: NavController) {
     fun startDownload(entry: OfflineMediaStore.CacheEntry) {
         if (OfflineMediaStore.isActive(entry.cacheKey)) return
         if (entry.sourceUrl.isBlank()) {
-            Toast.makeText(context, "暂无可用下载地址，请回到详情页重新缓存", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, "请到详情页重新缓存该资源", Toast.LENGTH_SHORT).show()
             return
         }
         scope.launch {

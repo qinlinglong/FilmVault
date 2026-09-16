@@ -14,6 +14,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Logout
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -50,6 +51,17 @@ fun SettingsScreen(nav: NavController) {
                     Icon(Icons.Filled.ArrowBack, contentDescription = "返回")
                 }
                 Text("站点设置", style = MaterialTheme.typography.titleLarge)
+                IconButton(
+                    onClick = {
+                        vm.logout()
+                        nav.navigate("login") {
+                            popUpTo("home") { inclusive = true }
+                            launchSingleTop = true
+                        }
+                    },
+                ) {
+                    Icon(Icons.Filled.Logout, contentDescription = "退出登录")
+                }
             }
         }
 
@@ -72,21 +84,6 @@ fun SettingsScreen(nav: NavController) {
                             modifier = Modifier.padding(top = 4.dp),
                         )
                     }
-                }
-            }
-
-            item {
-                Button(
-                    onClick = {
-                        vm.logout()
-                        nav.navigate("login") {
-                            popUpTo("home") { inclusive = true }
-                            launchSingleTop = true
-                        }
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Text("退出登录")
                 }
             }
 
