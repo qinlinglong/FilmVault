@@ -143,6 +143,8 @@ fun CacheScreen(nav: NavController) {
                                 )
                             }
                             if (expanded) groupEntries.forEach { entry ->
+                                val active = OfflineMediaStore.isActive(entry.cacheKey)
+                                val downloading = active || entry.state == "downloading"
                                 Row(
                                     Modifier.fillMaxWidth().padding(top = 12.dp).clickable {
                                         val local = OfflineMediaStore.cachedUri(context, "", entry.cacheKey)
@@ -167,7 +169,7 @@ fun CacheScreen(nav: NavController) {
                                         Text(
                                             "${when {
                                                 entry.completed -> "已完成"
-                                                OfflineMediaStore.isActive(entry.cacheKey) || entry.state == "downloading" -> "下载中"
+                                                downloading -> "下载中"
                                                 entry.state == "failed" -> "下载失败，可继续"
                                                 entry.state == "queued" -> "等待下载"
                                                 else -> "已暂停，可继续"
@@ -194,8 +196,8 @@ fun CacheScreen(nav: NavController) {
                                             }
                                         }) {
                                             Icon(
-                                                if (OfflineMediaStore.isActive(entry.cacheKey)) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                                                contentDescription = if (OfflineMediaStore.isActive(entry.cacheKey)) "暂停缓存" else "继续缓存",
+                                                if (downloading) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                                                contentDescription = if (downloading) "暂停缓存" else "继续缓存",
                                             )
                                         }
                                     }
