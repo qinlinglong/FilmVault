@@ -63,9 +63,17 @@ fun HomeScreen(nav: NavController) {
                 // 标题仅用于展示，不附加手势监听，避免连续点击时干扰页面事件分发。
                 Text("影库", style = MaterialTheme.typography.titleLarge, modifier = Modifier.padding(start = 8.dp))
                 Spacer(Modifier.weight(1f))
-                IconButton(onClick = { nav.navigate("search") }) { Icon(Icons.Default.Search, contentDescription = "搜索") }
-                IconButton(onClick = { nav.navigate("library") }) { Icon(Icons.Default.Star, contentDescription = "收藏/历史") }
-                IconButton(onClick = { nav.navigate("settings") }) { Icon(Icons.Default.Settings, contentDescription = "站点设置") }
+                // 顶部入口使用 singleTop，连续点击时复用已有页面，避免短时间内
+                // 重复压入导航栈导致页面重组和空白状态。
+                IconButton(onClick = { nav.navigate("search") { launchSingleTop = true } }) {
+                    Icon(Icons.Default.Search, contentDescription = "搜索")
+                }
+                IconButton(onClick = { nav.navigate("library") { launchSingleTop = true } }) {
+                    Icon(Icons.Default.Star, contentDescription = "收藏/历史")
+                }
+                IconButton(onClick = { nav.navigate("settings") { launchSingleTop = true } }) {
+                    Icon(Icons.Default.Settings, contentDescription = "站点设置")
+                }
             }
         }
 
