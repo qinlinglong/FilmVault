@@ -24,6 +24,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -37,6 +38,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.navigation.NavController
+import com.filmvault.app.di.AppModule
 import com.filmvault.app.ui.components.PosterImage
 import com.filmvault.app.util.OfflineMediaStore
 import kotlinx.coroutines.launch
@@ -49,6 +51,7 @@ fun CacheScreen(nav: NavController) {
     val context = LocalContext.current
     var entries by remember { mutableStateOf(emptyList<OfflineMediaStore.CacheEntry>()) }
     var expandedGroups by remember { mutableStateOf(setOf<String>()) }
+    val history by AppModule.repository.history.collectAsState(initial = emptyList())
     val scope = rememberCoroutineScope()
     suspend fun refresh() { entries = withContext(Dispatchers.IO) { OfflineMediaStore.list(context) } }
     LaunchedEffect(Unit) {
@@ -81,6 +84,8 @@ fun CacheScreen(nav: NavController) {
             ) {
                 items(groups.entries.toList(), key = { it.key }) { (title, groupEntries) ->
                     val expanded = title in expandedGroups
+                    val poster = groupEntries.firstOrNull { !it.posterUrl.isNullOrBlank() }?.posterUrl
+                        ?: history.firstOrNull { it.title == title }?.posterUrl
                     Surface(
                         shape = MaterialTheme.shapes.medium,
                         color = MaterialTheme.colorScheme.surfaceVariant,
@@ -89,7 +94,7 @@ fun CacheScreen(nav: NavController) {
                         Column(Modifier.fillMaxWidth().padding(14.dp)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 PosterImage(
-                                    url = groupEntries.firstOrNull { !it.posterUrl.isNullOrBlank() }?.posterUrl,
+                                    url = poster,
                                     contentDescription = title,
                                     modifier = Modifier.width(56.dp).height(80.dp).clip(RoundedCornerShape(6.dp)),
                                     contentScale = ContentScale.Crop,
