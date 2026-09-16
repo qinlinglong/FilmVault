@@ -44,6 +44,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -95,7 +96,7 @@ fun DetailScreen(nav: NavController, dir: String, id: String, localOnly: Boolean
     var cacheJob by remember { mutableStateOf<Job?>(null) }
     var pausedEpisode by remember { mutableStateOf<Pair<com.filmvault.app.data.model.PlayLine, Int>?>(null) }
     var cacheEntries by remember { mutableStateOf(emptyMap<String, OfflineMediaStore.CacheEntry>()) }
-    var liveProgress by remember { mutableStateOf(emptyMap<String, Pair<Long, Long>>()) }
+    val liveProgress = remember { mutableStateMapOf<String, Pair<Long, Long>>() }
 
     LaunchedEffect(Unit) {
         cacheEntries = OfflineMediaStore.list(context).associateBy { it.cacheKey }
@@ -131,7 +132,7 @@ fun DetailScreen(nav: NavController, dir: String, id: String, localOnly: Boolean
                     key,
                     "detail/$dir/$id",
                 ) { downloaded, total ->
-                    liveProgress = liveProgress + (key to (downloaded to total))
+                    liveProgress[key] = downloaded to total
                     cacheDownloaded = downloaded
                     cacheTotal = total
                     cacheProgress = if (total > 0L) downloaded.toFloat() / total else 0f
@@ -216,7 +217,7 @@ fun DetailScreen(nav: NavController, dir: String, id: String, localOnly: Boolean
                                                 resourceCacheKey(line, episode),
                                                 "detail/$dir/$id",
                                             ) { downloaded, total ->
-                                                liveProgress = liveProgress + (resourceCacheKey(line, episode) to (downloaded to total))
+                                                liveProgress[resourceCacheKey(line, episode)] = downloaded to total
                                                 cacheDownloaded = downloaded
                                                 cacheTotal = total
                                                 val itemProgress = if (total > 0L) downloaded.toFloat() / total else 0f
@@ -487,7 +488,7 @@ private fun ResourceRow(
             cacheProgress?.let { (downloaded, total) ->
                 Column(horizontalAlignment = Alignment.End, modifier = Modifier.padding(start = 8.dp)) {
                     Text(
-                        if (total > 0L) "${formatCacheBytes(downloaded)} / ${formatCacheBytes(total)}" else "正在缓存",
+                        if (total > 0L) "${formatCacheBytes(downloaded)} / ${formatCacheBytes(total)}" else "已下载 ${formatCacheBytes(downloaded)} / 计算中",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.primary,
                     )

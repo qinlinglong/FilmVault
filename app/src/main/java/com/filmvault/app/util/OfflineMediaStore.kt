@@ -153,9 +153,8 @@ object OfflineMediaStore {
         } else playlist
         check(!mediaPlaylist.contains("#EXT-X-KEY")) { "加密视频暂不支持离线缓存" }
         val segmentDirectory = File(directory, "segments").apply { mkdirs() }
-        val segmentCount = mediaPlaylist.lines().count { it.trim().isNotEmpty() && !it.trim().startsWith("#") }
         var index = 0
-        var completed = 0L
+        var downloadedBytes = 0L
         val rewritten = mediaPlaylist.lines().joinToString("\n") { line ->
             val value = line.trim()
             if (value.isEmpty() || value.startsWith("#")) line else {
@@ -163,11 +162,12 @@ object OfflineMediaStore {
                 val target = File(segmentDirectory, "segment-${index++}${extensionFor(segmentUrl, "")}")
                 if (!target.isFile || target.length() == 0L) {
                     val partial = File(target.parentFile, "${target.name}.part")
-                    downloadBinary(segmentUrl, partial, referer)
+                    downloadedBytes += downloadBinary(segmentUrl, partial, referer)
                     check(partial.renameTo(target) || target.isFile) { "保存分片失败" }
+                } else {
+                    downloadedBytes += target.length()
                 }
-                completed++
-                onProgress(completed, segmentCount.toLong())
+                onProgress(downloadedBytes, 0L)
                 "segments/${target.name}"
             }
         }
@@ -179,11 +179,12 @@ object OfflineMediaStore {
         response.body?.string() ?: error("清单为空")
     }
 
-    private fun downloadBinary(url: String, target: File, referer: String) {
+    private fun downloadBinary(url: String, target: File, referer: String): Long {
         AppModule.apiClient.openMediaResponse(url, referer).use { response ->
             check(response.isSuccessful) { "下载分片失败：HTTP ${response.code}" }
             response.body?.byteStream()?.use { input -> target.outputStream().use { output -> input.copyTo(output) } } ?: error("分片内容为空")
         }
+        return target.length()
     }
 
     private fun sourceKey(value: String): String = MessageDigest.getInstance("SHA-256").digest(value.toByteArray()).joinToString("") { "%02x".format(it) }
