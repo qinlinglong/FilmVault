@@ -70,6 +70,11 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 
 @Composable
 @OptIn(ExperimentalFoundationApi::class)
@@ -192,23 +197,33 @@ fun DetailScreen(nav: NavController, dir: String, id: String, localOnly: Boolean
                             cacheStatusText = "正在解析并缓存 ${selected.size} 个资源…"
                             Toast.makeText(context, cacheStatusText, Toast.LENGTH_SHORT).show()
                             cacheJob = scope.launch {
-                                var success = 0
-                                var failed = 0
                                 try {
-                                    selected.forEachIndexed { selectedIndex, key ->
+                                    val tasks = selected.mapNotNull { key ->
                                         val parts = key.split("/", limit = 2)
                                         val line = lines.firstOrNull { it.id == parts.getOrNull(0) }
                                         val episode = parts.getOrNull(1)?.toIntOrNull()
-                                        if (line == null || episode == null) {
-                                            failed++
-                                            return@forEachIndexed
-                                        }
-                                        try {
+                                        if (line == null || episode == null) null else line to episode
+                                    }
+                                    tasks.forEach { (line, episode) ->
+                                        OfflineMediaStore.enqueue(
+                                            context,
+                                            "${meta?.title.orEmpty()} · ${line.name} · 第${episode}集",
+                                            resourceCacheKey(line, episode),
+                                            "detail/$dir/$id",
+                                            "${AppModule.siteSettings.siteUrlNow}/py/${line.id}/$episode",
+                                        )
+                                    }
+                                    val gate = Semaphore(3)
+                                    val results = coroutineScope {
+                                        tasks.mapIndexed { taskIndex, (line, episode) ->
+                                            async {
+                                                gate.withPermit {
+                                                    try {
                                             val directUrl = AppModule.repository.resolvePlayUrl(line.id, episode)
                                                 ?: error("未解析到播放地址")
                                             val referer = "${AppModule.siteSettings.siteUrlNow}/py/${line.id}/$episode"
                                             pausedEpisode = line to episode
-                                            cacheStatusText = "正在缓存 ${selectedIndex + 1}/${selected.size}：${meta?.title.orEmpty()} 第${episode}集"
+                                            cacheStatusText = "正在缓存（最多 3 个并行）${taskIndex + 1}/${tasks.size}：${meta?.title.orEmpty()} 第${episode}集"
                                             OfflineMediaStore.download(
                                                 context,
                                                 directUrl,
@@ -220,16 +235,21 @@ fun DetailScreen(nav: NavController, dir: String, id: String, localOnly: Boolean
                                                 liveProgress[resourceCacheKey(line, episode)] = downloaded to total
                                                 cacheDownloaded = downloaded
                                                 cacheTotal = total
-                                                val itemProgress = if (total > 0L) downloaded.toFloat() / total else 0f
-                                                cacheProgress = ((selectedIndex + itemProgress) / selected.size).coerceIn(0f, 1f)
+                                                val finished = liveProgress.values.count { (done, size) -> size > 0L && done >= size }
+                                                cacheProgress = (finished.toFloat() / tasks.size.coerceAtLeast(1)).coerceIn(0f, 1f)
                                             }
-                                            success++
-                                        } catch (error: CancellationException) {
-                                            throw error
-                                        } catch (_: Throwable) {
-                                            failed++
+                                            true
+                                                    } catch (error: CancellationException) {
+                                                        throw error
+                                                    } catch (_: Throwable) {
+                                                        false
+                                                    }
+                                                }
+                                            }
                                         }
-                                    }
+                                    }.awaitAll()
+                                    val success = results.count { it }
+                                    val failed = results.count { !it }
                                     cacheProgress = if (failed == 0) 1f else cacheProgress
                                     cacheRevision++
                                     cacheEntries = OfflineMediaStore.list(context).associateBy { it.cacheKey }

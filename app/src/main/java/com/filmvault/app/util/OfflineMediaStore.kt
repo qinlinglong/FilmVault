@@ -27,8 +27,9 @@ object OfflineMediaStore {
         val downloaded: Long = 0L,
         val total: Long = 0L,
         val state: String = if (completed) "completed" else "paused",
+        val directory: File = file.parentFile ?: file,
     ) {
-        val bytes: Long get() = file.parentFile?.walkTopDown()?.filter { it.isFile }?.sumOf { it.length() } ?: file.length()
+        val bytes: Long get() = directory.walkTopDown().filter { it.isFile && it.name != METADATA }.sumOf { it.length() }
         val progress: Float get() = if (total > 0L) (downloaded.toFloat() / total).coerceIn(0f, 1f) else 0f
     }
 
@@ -109,17 +110,25 @@ object OfflineMediaStore {
         job != null
     }
 
+    /** 先登记队列任务，保证等待中的资源也会出现在缓存管理。 */
+    fun enqueue(context: Context, label: String, cacheKey: String, detailRoute: String, referer: String = AppModule.siteSettings.siteUrlNow): Boolean {
+        if (list(context).any { it.cacheKey == cacheKey }) return false
+        writeMetadata(context, "", referer, cacheKey, detailRoute, label, complete = false, state = "queued", downloaded = 0L, total = 0L)
+        return true
+    }
+
     fun cachedUri(context: Context, sourceUrl: String, cacheKey: String = ""): Uri? = cachedFile(context, sourceUrl, cacheKey)?.let(Uri::fromFile)
     fun isCached(context: Context, cacheKey: String): Boolean = cachedFile(context, "", cacheKey) != null
 
     fun list(context: Context): List<CacheEntry> = cacheRoot(context).listFiles().orEmpty().mapNotNull { directory ->
-        val media = directory.walkTopDown().firstOrNull { it.isFile && it.name != METADATA && it.length() > 0L } ?: return@mapNotNull null
+        val metadata = File(directory, METADATA).takeIf { it.isFile } ?: return@mapNotNull null
+        val media = directory.walkTopDown().firstOrNull { it.isFile && it.name != METADATA && it.length() > 0L }
         val properties = Properties()
-        File(directory, METADATA).takeIf { it.isFile }?.inputStream()?.use(properties::load)
+        metadata.inputStream().use(properties::load)
         CacheEntry(
             sourceUrl = properties.getProperty("url", ""),
-            label = properties.getProperty("label", media.name),
-            file = media,
+            label = properties.getProperty("label", media?.name ?: directory.name),
+            file = media ?: directory,
             detailRoute = properties.getProperty("detailRoute", ""),
             completed = properties.getProperty("complete", "false") == "true",
             cacheKey = properties.getProperty("cacheKey", ""),
@@ -127,6 +136,7 @@ object OfflineMediaStore {
             downloaded = properties.getProperty("downloaded", "0").toLongOrNull() ?: 0L,
             total = properties.getProperty("total", "0").toLongOrNull() ?: 0L,
             state = properties.getProperty("state", if (properties.getProperty("complete") == "true") "completed" else "paused"),
+            directory = directory,
         )
     }.sortedByDescending { it.file.parentFile?.lastModified() ?: it.file.lastModified() }
 
