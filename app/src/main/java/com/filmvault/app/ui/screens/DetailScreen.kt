@@ -514,10 +514,17 @@ private fun ResourceRow(
             cacheProgress?.let { (downloaded, total) ->
                 Column(horizontalAlignment = Alignment.End, modifier = Modifier.padding(start = 8.dp)) {
                     Text(
-                        if (total > 0L) "${formatCacheBytes(downloaded)} / ${formatCacheBytes(total)}" else "已下载 ${formatCacheBytes(downloaded)} / 计算中",
+                        if (cached) "已缓存" else if (total > 0L) "${formatCacheBytes(downloaded)} / ${formatCacheBytes(total)}" else "已下载 ${formatCacheBytes(downloaded)} / 计算中",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.primary,
                     )
+                    if (cached) {
+                        Text(
+                            if (total > 0L) "${formatCacheBytes(downloaded)} / ${formatCacheBytes(total)}" else "已下载 ${formatCacheBytes(downloaded)}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
+                        )
+                    }
                     if (total > 0L) LinearProgressIndicator(
                         progress = { (downloaded.toFloat() / total).coerceIn(0f, 1f) },
                         modifier = Modifier.width(92.dp).padding(top = 3.dp),
