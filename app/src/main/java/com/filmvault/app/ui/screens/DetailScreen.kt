@@ -213,23 +213,53 @@ fun DetailScreen(nav: NavController, dir: String, id: String, localOnly: Boolean
                                             meta?.posterUrl,
                                         )
                                     }
-                                    // 明确按 3 个一批调度：上一批全部结束后再启动下一批，
-                                    // 避免仅依赖信号量时后续任务因解析/网络异常一直停留在队列中。
+                                    // 先统一解析所有资源的真实地址，再进入下载队列。
+                                    // 解析请求串行执行，避免站点验证码/会话校验被 3 路并发触发；
+                                    // 下载阶段再按 3 路并行，解析失败只影响对应任务。
                                     val results = mutableListOf<Boolean>()
-                                    tasks.chunked(3).forEachIndexed { batchIndex, batch ->
+                                    val resolvedTasks = mutableListOf<Triple<com.filmvault.app.data.model.PlayLine, Int, String>>()
+                                    tasks.forEachIndexed { taskIndex, (line, episode) ->
+                                        var directUrl: String? = null
+                                        var attempt = 0
+                                        while (directUrl == null && attempt < 3) {
+                                            try {
+                                                cacheStatusText = "正在统一解析地址 ${taskIndex + 1}/${tasks.size}：${meta?.title.orEmpty()} 第${episode}集"
+                                                directUrl = AppModule.repository.resolvePlayUrl(line.id, episode)
+                                                    ?: error("未解析到播放地址")
+                                            } catch (error: CancellationException) {
+                                                throw error
+                                            } catch (_: Throwable) {
+                                                attempt++
+                                                if (attempt < 3) delay(attempt * 800L)
+                                            }
+                                        }
+                                        if (directUrl != null) {
+                                            val referer = "${AppModule.siteSettings.siteUrlNow}/py/${line.id}/$episode"
+                                            OfflineMediaStore.updateQueuedSource(
+                                                context,
+                                                resourceCacheKey(line, episode),
+                                                directUrl,
+                                                referer,
+                                            )
+                                            resolvedTasks += Triple(line, episode, directUrl)
+                                        } else {
+                                            OfflineMediaStore.markFailed(context, resourceCacheKey(line, episode))
+                                            results += false
+                                        }
+                                    }
+
+                                    resolvedTasks.chunked(3).forEachIndexed { batchIndex, batch ->
                                         val batchResults = coroutineScope {
-                                            batch.mapIndexed { batchTaskIndex, (line, episode) ->
+                                            batch.mapIndexed { batchTaskIndex, (line, episode, directUrl) ->
                                                 async {
                                                     var success = false
                                                     var attempt = 0
                                                     while (!success && attempt < 3) {
                                                         try {
-                                                            val directUrl = AppModule.repository.resolvePlayUrl(line.id, episode)
-                                                                ?: error("未解析到播放地址")
                                                             val referer = "${AppModule.siteSettings.siteUrlNow}/py/${line.id}/$episode"
                                                             pausedEpisode = line to episode
                                                             val taskIndex = batchIndex * 3 + batchTaskIndex
-                                                            cacheStatusText = "正在缓存（第 ${batchIndex + 1} 批 / 共 ${((tasks.size + 2) / 3)} 批）${taskIndex + 1}/${tasks.size}：${meta?.title.orEmpty()} 第${episode}集"
+                                                            cacheStatusText = "正在缓存（第 ${batchIndex + 1} 批 / 共 ${((resolvedTasks.size + 2) / 3)} 批）${taskIndex + 1}/${resolvedTasks.size}：${meta?.title.orEmpty()} 第${episode}集"
                                                             OfflineMediaStore.download(
                                                                 context,
                                                                 directUrl,

@@ -123,6 +123,26 @@ object OfflineMediaStore {
         return true
     }
 
+    /** 将统一解析得到的真实播放地址写入队列，供后续下载阶段直接使用。 */
+    fun updateQueuedSource(context: Context, cacheKey: String, sourceUrl: String, referer: String): Boolean {
+        if (sourceUrl.isBlank()) return false
+        val entry = list(context).firstOrNull { it.cacheKey == cacheKey } ?: return false
+        writeMetadata(
+            context,
+            sourceUrl,
+            referer,
+            entry.cacheKey,
+            entry.detailRoute,
+            entry.label,
+            entry.posterUrl,
+            complete = entry.completed,
+            state = if (entry.completed) "completed" else "queued",
+            downloaded = entry.downloaded,
+            total = entry.total,
+        )
+        return true
+    }
+
     /** 将尚未拿到直链的队列任务标记为失败，避免一直显示为等待中。 */
     fun markFailed(context: Context, cacheKey: String) {
         val entry = list(context).firstOrNull { it.cacheKey == cacheKey } ?: return
