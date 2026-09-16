@@ -73,8 +73,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.sync.Semaphore
-import kotlinx.coroutines.sync.withPermit
 
 @Composable
 @OptIn(ExperimentalFoundationApi::class)
@@ -215,11 +213,13 @@ fun DetailScreen(nav: NavController, dir: String, id: String, localOnly: Boolean
                                             meta?.posterUrl,
                                         )
                                     }
-                                    val gate = Semaphore(3)
-                                    val results = coroutineScope {
-                                        tasks.mapIndexed { taskIndex, (line, episode) ->
-                                            async {
-                                                gate.withPermit {
+                                    // 明确按 3 个一批调度：上一批全部结束后再启动下一批，
+                                    // 避免仅依赖信号量时后续任务因解析/网络异常一直停留在队列中。
+                                    val results = mutableListOf<Boolean>()
+                                    tasks.chunked(3).forEachIndexed { batchIndex, batch ->
+                                        val batchResults = coroutineScope {
+                                            batch.mapIndexed { batchTaskIndex, (line, episode) ->
+                                                async {
                                                     var success = false
                                                     var attempt = 0
                                                     while (!success && attempt < 3) {
@@ -228,7 +228,8 @@ fun DetailScreen(nav: NavController, dir: String, id: String, localOnly: Boolean
                                                                 ?: error("未解析到播放地址")
                                                             val referer = "${AppModule.siteSettings.siteUrlNow}/py/${line.id}/$episode"
                                                             pausedEpisode = line to episode
-                                                            cacheStatusText = "正在缓存（最多 3 个并行）${taskIndex + 1}/${tasks.size}：${meta?.title.orEmpty()} 第${episode}集"
+                                                            val taskIndex = batchIndex * 3 + batchTaskIndex
+                                                            cacheStatusText = "正在缓存（第 ${batchIndex + 1} 批 / 共 ${((tasks.size + 2) / 3)} 批）${taskIndex + 1}/${tasks.size}：${meta?.title.orEmpty()} 第${episode}集"
                                                             OfflineMediaStore.download(
                                                                 context,
                                                                 directUrl,
@@ -254,10 +255,11 @@ fun DetailScreen(nav: NavController, dir: String, id: String, localOnly: Boolean
                                                     }
                                                     if (!success) OfflineMediaStore.markFailed(context, resourceCacheKey(line, episode))
                                                     success
-                                                }
                                             }
+                                        }.awaitAll()
                                         }
-                                    }.awaitAll()
+                                        results += batchResults
+                                    }
                                     val success = results.count { it }
                                     val failed = results.count { !it }
                                     cacheProgress = if (failed == 0) 1f else cacheProgress
