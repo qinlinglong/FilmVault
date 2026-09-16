@@ -77,6 +77,14 @@ class ApiClient(context: Context, private val siteSettings: SiteSettingsStore) {
     /** 当前站点 host（用于按域名隔离 cookie）。 */
     private val host: String get() = hostOf(baseUrl)
 
+    /** 供原生播放器缓存直链时复用登录 Cookie 和站点 User-Agent。 */
+    fun openMediaResponse(url: String, referer: String = baseUrl): Response = client.newCall(
+        Request.Builder()
+            .url(url)
+            .header("Referer", referer)
+            .build(),
+    ).execute()
+
     private suspend fun executeWithVerification(request: () -> okhttp3.Response): okhttp3.Response {
         val observedGeneration = verificationGeneration
         var response = request()

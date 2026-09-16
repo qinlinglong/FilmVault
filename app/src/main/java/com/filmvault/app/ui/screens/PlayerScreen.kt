@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.heightIn
@@ -39,6 +40,8 @@ import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.PlaylistPlay
+import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.DownloadDone
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Slider
@@ -87,7 +90,10 @@ import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
 import androidx.media3.ui.PlayerView
 import androidx.navigation.NavController
 import com.filmvault.app.di.AppModule
+import com.filmvault.app.util.OfflineMediaStore
 import android.widget.Toast
+
+private enum class DownloadStatus { IDLE, DOWNLOADING, DOWNLOADED, FAILED }
 
 private fun applyPlayerImmersiveMode(activity: android.app.Activity?, view: android.view.View) {
     val window = activity?.window ?: return
@@ -129,9 +135,14 @@ private fun trackOptions(tracks: Tracks, type: Int): List<PlayerTrackOption> =
     }
 
 @Composable
-private fun PlayerMenuItem(label: String, selected: Boolean = false, onClick: () -> Unit) {
+private fun PlayerMenuItem(
+    label: String,
+    selected: Boolean = false,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+) {
     Row(
-        modifier = Modifier.fillMaxWidth()
+        modifier = modifier.fillMaxWidth()
             .clip(RoundedCornerShape(10.dp))
             .background(if (selected) Color(0xFF294B70) else Color.Transparent)
             .clickable(onClick = onClick)
@@ -187,6 +198,12 @@ fun PlayerScreen(
     var playbackSpeed by remember { mutableStateOf(1f) }
     var switchingEpisode by remember { mutableStateOf(false) }
     var exiting by remember { mutableStateOf(false) }
+    var activeSourceUrl by remember { mutableStateOf(url) }
+    var downloadStatus by remember {
+        mutableStateOf(
+            if (OfflineMediaStore.cachedUri(context, url) != null) DownloadStatus.DOWNLOADED else DownloadStatus.IDLE,
+        )
+    }
     val episodeTotal = episodeCount.coerceAtLeast(1)
     val videoTrackCount = tracks.groups
         .filter { it.type == C.TRACK_TYPE_VIDEO }
@@ -205,7 +222,8 @@ fun PlayerScreen(
     }
     val player = remember {
         ExoPlayer.Builder(context).setTrackSelector(trackSelector).build().apply {
-            setMediaItem(MediaItem.fromUri(url))
+            val playbackUri = OfflineMediaStore.cachedUri(context, url)?.toString() ?: url
+            setMediaItem(MediaItem.fromUri(playbackUri))
             prepare()
             playWhenReady = true
         }
@@ -237,12 +255,41 @@ fun PlayerScreen(
                     Toast.makeText(context, "第${episode}集暂未解析到播放地址", Toast.LENGTH_SHORT).show()
                 } else {
                     currentEpisode = episode
-                    player.setMediaItem(MediaItem.fromUri(nextUrl), true)
+                    activeSourceUrl = nextUrl
+                    downloadStatus = if (OfflineMediaStore.cachedUri(context, nextUrl) != null) {
+                        DownloadStatus.DOWNLOADED
+                    } else DownloadStatus.IDLE
+                    val playbackUri = OfflineMediaStore.cachedUri(context, nextUrl)?.toString() ?: nextUrl
+                    player.setMediaItem(MediaItem.fromUri(playbackUri), true)
                     player.prepare()
                     player.playWhenReady = true
                 }
             } finally {
                 switchingEpisode = false
+            }
+        }
+    }
+
+    fun downloadCurrentEpisode() {
+        if (downloadStatus == DownloadStatus.DOWNLOADING || downloadStatus == DownloadStatus.DOWNLOADED) return
+        downloadStatus = DownloadStatus.DOWNLOADING
+        playerScope.launch {
+            try {
+                // 播放直链通常带短时效签名，缓存时重新解析当前集，避免进入播放器后地址过期。
+                val freshUrl = if (lineId.isNotBlank()) {
+                    AppModule.repository.resolvePlayUrl(lineId, currentEpisode).orEmpty()
+                } else activeSourceUrl
+                check(freshUrl.isNotBlank()) { "未解析到当前集播放地址" }
+                activeSourceUrl = freshUrl
+                val playbackReferer = if (lineId.isNotBlank()) {
+                    "${AppModule.siteSettings.siteUrlNow}/py/$lineId/$currentEpisode"
+                } else AppModule.siteSettings.siteUrlNow
+                OfflineMediaStore.download(context, freshUrl, playbackReferer)
+                downloadStatus = DownloadStatus.DOWNLOADED
+                Toast.makeText(context, "已缓存当前集，可离线播放", Toast.LENGTH_SHORT).show()
+            } catch (error: Throwable) {
+                downloadStatus = DownloadStatus.FAILED
+                Toast.makeText(context, "缓存失败：${error.message ?: "网络错误"}", Toast.LENGTH_LONG).show()
             }
         }
     }
@@ -693,6 +740,21 @@ fun PlayerScreen(
                             },
                         ) { Icon(Icons.Default.MusicNote, contentDescription = "音轨设置", tint = Color.White) }
                     }
+                    IconButton(
+                        onClick = { downloadCurrentEpisode() },
+                        enabled = downloadStatus != DownloadStatus.DOWNLOADING && downloadStatus != DownloadStatus.DOWNLOADED,
+                    ) {
+                        Icon(
+                            if (downloadStatus == DownloadStatus.DOWNLOADED) Icons.Default.DownloadDone else Icons.Default.Download,
+                            contentDescription = when (downloadStatus) {
+                                DownloadStatus.DOWNLOADED -> "已缓存，可离线播放"
+                                DownloadStatus.DOWNLOADING -> "正在缓存"
+                                DownloadStatus.FAILED -> "重新缓存"
+                                DownloadStatus.IDLE -> "缓存当前集"
+                            },
+                            tint = if (downloadStatus == DownloadStatus.DOWNLOADED) Color(0xFF8FD694) else Color.White,
+                        )
+                    }
                         IconButton(
                             onClick = {
                                 fullscreen = !fullscreen
@@ -759,15 +821,25 @@ fun PlayerScreen(
                     }
                 }
                 when {
-                    playlistExpanded -> (1..episodeTotal).forEach { episode ->
-                        PlayerMenuItem(
-                            label = if (episode == currentEpisode) "第${episode}集（播放中）" else "第${episode}集",
-                            selected = episode == currentEpisode,
-                            onClick = {
-                                playlistExpanded = false
-                                if (episode != currentEpisode) switchEpisode(episode)
-                            },
-                        )
+                    // 选集采用紧凑网格，剧集较多时不再用一整列长列表占满屏幕。
+                    playlistExpanded -> (1..episodeTotal).chunked(6).forEach { episodeRow ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            episodeRow.forEach { episode ->
+                                PlayerMenuItem(
+                                    label = if (episode == currentEpisode) "✓ $episode" else episode.toString(),
+                                    selected = episode == currentEpisode,
+                                    modifier = Modifier.weight(1f),
+                                    onClick = {
+                                        playlistExpanded = false
+                                        if (episode != currentEpisode) switchEpisode(episode)
+                                    },
+                                )
+                            }
+                            repeat(6 - episodeRow.size) { Spacer(Modifier.weight(1f)) }
+                        }
                     }
                     speedMenuExpanded -> listOf(0.5f, 0.75f, 1f, 1.25f, 1.5f, 2f).forEach { speed ->
                         PlayerMenuItem(

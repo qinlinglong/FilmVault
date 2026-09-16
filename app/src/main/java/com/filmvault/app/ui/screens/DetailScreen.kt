@@ -21,6 +21,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.DownloadDone
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -54,6 +57,7 @@ import com.filmvault.app.data.model.HistoryItem
 import com.filmvault.app.di.AppModule
 import com.filmvault.app.ui.components.PosterImage
 import com.filmvault.app.util.Playback
+import com.filmvault.app.util.OfflineMediaStore
 import com.filmvault.app.viewmodel.DetailViewModel
 import kotlinx.coroutines.launch
 
@@ -70,6 +74,9 @@ fun DetailScreen(nav: NavController, dir: String, id: String) {
         initial = detailEntry?.savedStateHandle?.get<Int>("detail_scroll_y") ?: 0,
     )
     var resolvingKey by remember { mutableStateOf<String?>(null) }
+    var cacheSelectionMode by rememberSaveable { mutableStateOf(false) }
+    var selectedEpisodes by remember { mutableStateOf(setOf<String>()) }
+    var cachingEpisodes by remember { mutableStateOf(false) }
 
     LaunchedEffect(detailScrollState, detailEntry) {
         snapshotFlow { detailScrollState.value }.collect { scrollY ->
@@ -84,12 +91,61 @@ fun DetailScreen(nav: NavController, dir: String, id: String) {
                 IconButton(onClick = { nav.popBackStack() }) {
                     Icon(Icons.Filled.ArrowBack, contentDescription = "返回")
                 }
-                Text(meta?.title ?: "详情", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                Text(
+                    if (cacheSelectionMode) "已选 ${selectedEpisodes.size} 个缓存项" else meta?.title ?: "详情",
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.weight(1f),
+                )
                 IconButton(onClick = { vm.toggleFavorite() }) {
                     Icon(
                         if (vm.isFavorite) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder,
                         contentDescription = "收藏",
                         tint = if (vm.isFavorite) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                    )
+                }
+                if (tab == 0) IconButton(
+                    onClick = {
+                        if (cacheSelectionMode) {
+                            if (selectedEpisodes.isEmpty() || cachingEpisodes) return@IconButton
+                            val selected = selectedEpisodes.toSet()
+                            val lines = vm.resources?.playLines.orEmpty()
+                            cachingEpisodes = true
+                            scope.launch {
+                                var success = 0
+                                var failed = 0
+                                selected.forEach { key ->
+                                    val parts = key.split("/", limit = 2)
+                                    val line = lines.firstOrNull { it.id == parts.getOrNull(0) }
+                                    val episode = parts.getOrNull(1)?.toIntOrNull()
+                                    if (line == null || episode == null) {
+                                        failed++
+                                        return@forEach
+                                    }
+                                    runCatching {
+                                        val directUrl = AppModule.repository.resolvePlayUrl(line.id, episode)
+                                            ?: error("未解析到播放地址")
+                                        val referer = "${AppModule.siteSettings.siteUrlNow}/py/${line.id}/$episode"
+                                        OfflineMediaStore.download(context, directUrl, referer)
+                                    }.onSuccess { success++ }.onFailure { failed++ }
+                                }
+                                cachingEpisodes = false
+                                cacheSelectionMode = false
+                                selectedEpisodes = emptySet()
+                                Toast.makeText(
+                                    context,
+                                    if (failed == 0) "已缓存 $success 个资源，可离线播放" else "已缓存 $success 个，失败 $failed 个",
+                                    Toast.LENGTH_LONG,
+                                ).show()
+                            }
+                        } else {
+                            cacheSelectionMode = true
+                        }
+                    },
+                    enabled = !cachingEpisodes,
+                ) {
+                    Icon(
+                        if (cacheSelectionMode && selectedEpisodes.isNotEmpty()) Icons.Filled.DownloadDone else Icons.Filled.Download,
+                        contentDescription = if (cacheSelectionMode) "缓存已选资源" else "选择缓存资源",
                     )
                 }
             }
@@ -150,12 +206,33 @@ fun DetailScreen(nav: NavController, dir: String, id: String) {
                 "磁力资源 ${res?.magnets?.size ?: 0}",
             )
             TabRow(selectedTabIndex = tab) {
-                tabTitles.forEachIndexed { i, t -> Tab(selected = tab == i, onClick = { tab = i }, text = { Text(t, fontSize = MaterialTheme.typography.labelSmall.fontSize) }) }
+                tabTitles.forEachIndexed { i, t ->
+                    Tab(
+                        selected = tab == i,
+                        onClick = {
+                            tab = i
+                            if (i != 0) {
+                                cacheSelectionMode = false
+                                selectedEpisodes = emptySet()
+                            }
+                        },
+                        text = { Text(t, fontSize = MaterialTheme.typography.labelSmall.fontSize) },
+                    )
+                }
             }
             Spacer(Modifier.height(10.dp))
 
             when (tab) {
-                0 -> PlayList(vm.resources?.playLines ?: emptyList(), resolvingKey) { line, episode ->
+                0 -> PlayList(
+                    lines = vm.resources?.playLines ?: emptyList(),
+                    resolvingKey = resolvingKey,
+                    selectionMode = cacheSelectionMode,
+                    selectedEpisodes = selectedEpisodes,
+                    onToggleSelection = { line, episode ->
+                        val key = "${line.id}/$episode"
+                        selectedEpisodes = if (key in selectedEpisodes) selectedEpisodes - key else selectedEpisodes + key
+                    },
+                ) { line, episode ->
                     val key = "${line.id}/$episode"
                     if (resolvingKey != null) return@PlayList
                     tab = 0
@@ -205,13 +282,24 @@ private fun InfoLine(label: String, value: String?) {
 }
 
 @Composable
-private fun ResourceRow(title: String, subtitle: String? = null, isLoading: Boolean = false, onClick: () -> Unit) {
+private fun ResourceRow(
+    title: String,
+    subtitle: String? = null,
+    isLoading: Boolean = false,
+    selectionEnabled: Boolean = false,
+    selected: Boolean = false,
+    onClick: () -> Unit,
+) {
     Surface(
         shape = RoundedCornerShape(10.dp),
         color = MaterialTheme.colorScheme.surfaceVariant,
         modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).clickable(onClick = onClick),
     ) {
         Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+            if (selectionEnabled) {
+                Checkbox(checked = selected, onCheckedChange = null)
+                Spacer(Modifier.width(4.dp))
+            }
             Column(Modifier.weight(1f)) {
                 Text(title, style = MaterialTheme.typography.bodyMedium)
                 subtitle?.let {
@@ -256,6 +344,9 @@ private fun CloudList(context: android.content.Context, items: List<com.filmvaul
 private fun PlayList(
     lines: List<com.filmvault.app.data.model.PlayLine>,
     resolvingKey: String?,
+    selectionMode: Boolean,
+    selectedEpisodes: Set<String>,
+    onToggleSelection: (line: com.filmvault.app.data.model.PlayLine, episode: Int) -> Unit,
     onPlay: (line: com.filmvault.app.data.model.PlayLine, episode: Int) -> Unit,
 ) {
     if (lines.isEmpty()) EmptyHint("暂无在线播放线路")
@@ -265,7 +356,11 @@ private fun PlayList(
             ResourceRow(
                 title = if (resolvingKey == "${line.id}/${idx + 1}") "正在解析并准备播放器…" else ep.ifBlank { "第 ${idx + 1} 集" },
                 isLoading = resolvingKey == "${line.id}/${idx + 1}",
-                onClick = { onPlay(line, idx + 1) },
+                selectionEnabled = selectionMode,
+                selected = "${line.id}/${idx + 1}" in selectedEpisodes,
+                onClick = {
+                    if (selectionMode) onToggleSelection(line, idx + 1) else onPlay(line, idx + 1)
+                },
             )
         }
     }
