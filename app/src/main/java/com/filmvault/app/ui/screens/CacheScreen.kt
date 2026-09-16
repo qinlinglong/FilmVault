@@ -167,8 +167,9 @@ fun CacheScreen(nav: NavController) {
                                         Text(
                                             "${when {
                                                 entry.completed -> "已完成"
-                                                OfflineMediaStore.isActive(entry.cacheKey) -> "下载中"
+                                                OfflineMediaStore.isActive(entry.cacheKey) || entry.state == "downloading" -> "下载中"
                                                 entry.state == "failed" -> "下载失败，可继续"
+                                                entry.state == "queued" -> "等待下载"
                                                 else -> "已暂停，可继续"
                                             }} · ${formatBytes(entry.bytes)}" +
                                                 (if (entry.total > 0L) " / ${formatBytes(entry.total)}" else "") +
