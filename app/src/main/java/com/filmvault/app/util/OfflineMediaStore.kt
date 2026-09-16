@@ -40,17 +40,22 @@ object OfflineMediaStore {
         require(sourceUrl.isNotBlank()) { "播放地址为空" }
         cachedFile(context, sourceUrl, cacheKey)?.let { return@withContext it }
         val taskKey = cacheKey.ifBlank { sourceUrl }
+        val existingEntry = list(context).firstOrNull { it.cacheKey == cacheKey && cacheKey.isNotBlank() }
+        val metadataPosterUrl = posterUrl ?: existingEntry?.posterUrl
         val taskJob = coroutineContext[Job]
-        synchronized(activeJobs) { if (taskJob != null) activeJobs[taskKey] = taskJob }
+        synchronized(activeJobs) {
+            check(activeJobs[taskKey]?.isActive != true) { "该资源正在下载" }
+            if (taskJob != null) activeJobs[taskKey] = taskJob
+        }
         val directory = File(cacheRoot(context), sourceKey(cacheKey.ifBlank { sourceUrl })).apply { mkdirs() }
-        writeMetadata(context, sourceUrl, referer, cacheKey, detailRoute, label, posterUrl, complete = false, state = "downloading", downloaded = 0L, total = 0L)
+        writeMetadata(context, sourceUrl, referer, cacheKey, detailRoute, label, metadataPosterUrl, complete = false, state = "downloading", downloaded = 0L, total = 0L)
         var lastPersistAt = 0L
         var lastPersistBytes = 0L
         fun report(downloaded: Long, total: Long) {
             onProgress(downloaded, total)
             val now = System.currentTimeMillis()
             if (downloaded == total || now - lastPersistAt >= 500L || downloaded - lastPersistBytes >= 256L * 1024L) {
-                writeMetadata(context, sourceUrl, referer, cacheKey, detailRoute, label, posterUrl, complete = false, state = "downloading", downloaded = downloaded, total = total)
+                writeMetadata(context, sourceUrl, referer, cacheKey, detailRoute, label, metadataPosterUrl, complete = false, state = "downloading", downloaded = downloaded, total = total)
                 lastPersistAt = now
                 lastPersistBytes = downloaded
             }
@@ -91,13 +96,13 @@ object OfflineMediaStore {
                     responseForStream?.close()
                     file
                 }
-                writeMetadata(context, sourceUrl, referer, cacheKey, detailRoute, label, posterUrl, complete = true, state = "completed", downloaded = outputBytes(output), total = outputBytes(output))
+                writeMetadata(context, sourceUrl, referer, cacheKey, detailRoute, label, metadataPosterUrl, complete = true, state = "completed", downloaded = outputBytes(output), total = outputBytes(output))
                 output
             }
         } catch (error: Throwable) {
             val state = if (error is CancellationException) "paused" else "failed"
             val current = list(context).firstOrNull { it.cacheKey == cacheKey }
-            writeMetadata(context, sourceUrl, referer, cacheKey, detailRoute, label, posterUrl ?: current?.posterUrl, complete = false, state = state, downloaded = current?.bytes ?: 0L, total = current?.total ?: 0L)
+            writeMetadata(context, sourceUrl, referer, cacheKey, detailRoute, label, metadataPosterUrl ?: current?.posterUrl, complete = false, state = state, downloaded = current?.bytes ?: 0L, total = current?.total ?: 0L)
             throw error
         } finally {
             synchronized(activeJobs) { if (activeJobs[taskKey] == taskJob) activeJobs.remove(taskKey) }
@@ -118,6 +123,24 @@ object OfflineMediaStore {
         return true
     }
 
+    /** 将尚未拿到直链的队列任务标记为失败，避免一直显示为等待中。 */
+    fun markFailed(context: Context, cacheKey: String) {
+        val entry = list(context).firstOrNull { it.cacheKey == cacheKey } ?: return
+        writeMetadata(
+            context,
+            entry.sourceUrl,
+            entry.referer,
+            entry.cacheKey,
+            entry.detailRoute,
+            entry.label,
+            entry.posterUrl,
+            complete = false,
+            state = "failed",
+            downloaded = entry.bytes,
+            total = entry.total,
+        )
+    }
+
     fun cachedUri(context: Context, sourceUrl: String, cacheKey: String = ""): Uri? = cachedFile(context, sourceUrl, cacheKey)?.let(Uri::fromFile)
     fun isCached(context: Context, cacheKey: String): Boolean = cachedFile(context, "", cacheKey) != null
 
@@ -126,23 +149,25 @@ object OfflineMediaStore {
         val media = directory.walkTopDown().firstOrNull { it.isFile && it.name != METADATA && it.length() > 0L }
         val properties = Properties()
         metadata.inputStream().use(properties::load)
+        val complete = properties.getProperty("complete", "false") == "true" && media != null
+        val persistedState = properties.getProperty("state", if (complete) "completed" else "paused")
         CacheEntry(
             sourceUrl = properties.getProperty("url", ""),
             label = properties.getProperty("label", media?.name ?: directory.name),
             file = media ?: directory,
             detailRoute = properties.getProperty("detailRoute", ""),
-            completed = properties.getProperty("complete", "false") == "true",
+            completed = complete,
             cacheKey = properties.getProperty("cacheKey", ""),
             referer = properties.getProperty("referer", ""),
             posterUrl = properties.getProperty("posterUrl", "").ifBlank { null },
             downloaded = properties.getProperty("downloaded", "0").toLongOrNull() ?: 0L,
             total = properties.getProperty("total", "0").toLongOrNull() ?: 0L,
-            state = properties.getProperty("state", if (properties.getProperty("complete") == "true") "completed" else "paused"),
+            state = if (!complete && persistedState == "completed") "failed" else persistedState,
             directory = directory,
         )
     }.sortedByDescending { it.file.parentFile?.lastModified() ?: it.file.lastModified() }
 
-    fun delete(entry: CacheEntry): Boolean = entry.file.parentFile?.deleteRecursively() == true
+    fun delete(entry: CacheEntry): Boolean = entry.directory.deleteRecursively()
     fun cacheSize(context: Context): Long = cacheRoot(context).walkTopDown().filter { it.isFile }.sumOf { it.length() }
 
     private fun cachedFile(context: Context, sourceUrl: String, cacheKey: String = ""): File? {
@@ -210,7 +235,14 @@ object OfflineMediaStore {
             setProperty("posterUrl", posterUrl.orEmpty())
             setProperty("state", state); setProperty("downloaded", downloaded.toString()); setProperty("total", total.toString())
         }
-        File(cacheRoot(context), sourceKey(cacheKey.ifBlank { sourceUrl })).apply { mkdirs() }.resolve(METADATA).outputStream().use { output -> properties.store(output, null) }
+        val directory = File(cacheRoot(context), sourceKey(cacheKey.ifBlank { sourceUrl })).apply { mkdirs() }
+        val metadata = directory.resolve(METADATA)
+        val temporary = directory.resolve("$METADATA.tmp")
+        temporary.outputStream().use { output -> properties.store(output, null) }
+        if (!temporary.renameTo(metadata)) {
+            metadata.delete()
+            check(temporary.renameTo(metadata)) { "保存缓存状态失败" }
+        }
     }
 
     private fun outputBytes(file: File): Long = file.parentFile?.walkTopDown()?.filter { it.isFile }?.sumOf { it.length() } ?: file.length()

@@ -179,11 +179,17 @@ fun CacheScreen(nav: NavController) {
                                             style = MaterialTheme.typography.bodySmall,
                                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
                                         )
-                                        if (!entry.completed && entry.total > 0L) {
-                                            androidx.compose.material3.LinearProgressIndicator(
-                                                progress = { entry.progress },
-                                                modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
-                                            )
+                                        if (!entry.completed) {
+                                            if (entry.total > 0L) {
+                                                androidx.compose.material3.LinearProgressIndicator(
+                                                    progress = { entry.progress },
+                                                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                                                )
+                                            } else if (downloading) {
+                                                androidx.compose.material3.LinearProgressIndicator(
+                                                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                                                )
+                                            }
                                         }
                                     }
                                     if (!entry.completed) {

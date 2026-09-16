@@ -245,6 +245,7 @@ fun DetailScreen(nav: NavController, dir: String, id: String, localOnly: Boolean
                                                     } catch (error: CancellationException) {
                                                         throw error
                                                     } catch (_: Throwable) {
+                                                        OfflineMediaStore.markFailed(context, resourceCacheKey(line, episode))
                                                         false
                                                     }
                                                 }
