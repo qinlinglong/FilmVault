@@ -1,6 +1,7 @@
 package com.filmvault.app.ui.screens
 
 import android.net.Uri
+import android.widget.Toast
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -54,6 +55,29 @@ fun CacheScreen(nav: NavController) {
     val history by AppModule.repository.history.collectAsState(initial = emptyList())
     val scope = rememberCoroutineScope()
     suspend fun refresh() { entries = withContext(Dispatchers.IO) { OfflineMediaStore.list(context) } }
+    fun startDownload(entry: OfflineMediaStore.CacheEntry) {
+        if (OfflineMediaStore.isActive(entry.cacheKey)) return
+        if (entry.sourceUrl.isBlank()) {
+            Toast.makeText(context, "暂无可用下载地址，请回到详情页重新缓存", Toast.LENGTH_SHORT).show()
+            return
+        }
+        scope.launch {
+            runCatching {
+                OfflineMediaStore.download(
+                    context,
+                    entry.sourceUrl,
+                    entry.referer,
+                    entry.label,
+                    entry.cacheKey,
+                    entry.detailRoute,
+                    entry.posterUrl,
+                )
+            }.onFailure {
+                Toast.makeText(context, "下载失败：${it.message ?: "网络错误"}", Toast.LENGTH_LONG).show()
+            }
+            refresh()
+        }
+    }
     LaunchedEffect(Unit) {
         while (true) {
             refresh()
@@ -129,6 +153,8 @@ fun CacheScreen(nav: NavController) {
                                             nav.navigate(
                                                 "player/${Uri.encode(local.toString())}?lineId=${Uri.encode(lineId)}&episode=$episode&episodeCount=1&lineName=&resourceTitle=${Uri.encode(title)}&cacheKey=${Uri.encode(entry.cacheKey)}",
                                             )
+                                        } else {
+                                            startDownload(entry)
                                         }
                                     },
                                     verticalAlignment = Alignment.CenterVertically,
@@ -162,20 +188,8 @@ fun CacheScreen(nav: NavController) {
                                             if (OfflineMediaStore.isActive(entry.cacheKey)) {
                                                 OfflineMediaStore.pause(entry.cacheKey)
                                                 scope.launch { refresh() }
-                                            } else if (entry.sourceUrl.isNotBlank()) {
-                                                scope.launch {
-                                                    runCatching {
-                                                        OfflineMediaStore.download(
-                                                            context,
-                                                            entry.sourceUrl,
-                                                            entry.referer,
-                                                            entry.label,
-                                                            entry.cacheKey,
-                                                            entry.detailRoute,
-                                                        )
-                                                    }
-                                                    refresh()
-                                                }
+                                            } else {
+                                                startDownload(entry)
                                             }
                                         }) {
                                             Icon(
