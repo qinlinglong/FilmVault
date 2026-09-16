@@ -4,6 +4,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -51,6 +52,7 @@ fun SettingsScreen(nav: NavController) {
                     Icon(Icons.Filled.ArrowBack, contentDescription = "返回")
                 }
                 Text("站点设置", style = MaterialTheme.typography.titleLarge)
+                Spacer(Modifier.weight(1f))
                 IconButton(
                     onClick = {
                         vm.logout()
