@@ -3,6 +3,8 @@ package com.filmvault.app.ui.screens
 import android.net.Uri
 import android.widget.Toast
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -23,6 +25,8 @@ import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.DownloadDone
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
@@ -62,8 +66,11 @@ import com.filmvault.app.util.Playback
 import com.filmvault.app.util.OfflineMediaStore
 import com.filmvault.app.viewmodel.DetailViewModel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.CancellationException
 
 @Composable
+@OptIn(ExperimentalFoundationApi::class)
 fun DetailScreen(nav: NavController, dir: String, id: String) {
     val vm: DetailViewModel = viewModel(key = "$dir/$id") { DetailViewModel(dir, id, "") }
     val meta = vm.meta
@@ -80,7 +87,56 @@ fun DetailScreen(nav: NavController, dir: String, id: String) {
     var selectedEpisodes by remember { mutableStateOf(setOf<String>()) }
     var cachingEpisodes by remember { mutableStateOf(false) }
     var cacheProgress by remember { mutableFloatStateOf(0f) }
+    var cacheDownloaded by remember { mutableStateOf(0L) }
+    var cacheTotal by remember { mutableStateOf(0L) }
     var cacheStatusText by remember { mutableStateOf("") }
+    var cacheRevision by remember { mutableIntStateOf(0) }
+    var cacheJob by remember { mutableStateOf<Job?>(null) }
+    var pausedEpisode by remember { mutableStateOf<Pair<com.filmvault.app.data.model.PlayLine, Int>?>(null) }
+
+    fun resourceCacheKey(line: com.filmvault.app.data.model.PlayLine, episode: Int) =
+        OfflineMediaStore.resourceKey(dir, id, line.id, episode)
+
+    fun cacheSingle(line: com.filmvault.app.data.model.PlayLine, episode: Int) {
+        if (cachingEpisodes) return
+        cachingEpisodes = true
+        cacheProgress = 0f
+        cacheDownloaded = 0L
+        cacheTotal = 0L
+        cacheStatusText = "正在解析并缓存：${meta?.title.orEmpty()} 第${episode}集"
+        Toast.makeText(context, cacheStatusText, Toast.LENGTH_SHORT).show()
+        pausedEpisode = line to episode
+        cacheJob = scope.launch {
+            try {
+                val directUrl = AppModule.repository.resolvePlayUrl(line.id, episode) ?: error("未解析到播放地址")
+                val key = resourceCacheKey(line, episode)
+                OfflineMediaStore.download(
+                    context,
+                    directUrl,
+                    "${AppModule.siteSettings.siteUrlNow}/py/${line.id}/$episode",
+                    "${meta?.title.orEmpty()} · ${line.name} · 第${episode}集",
+                    key,
+                    "detail/$dir/$id",
+                ) { downloaded, total ->
+                    cacheDownloaded = downloaded
+                    cacheTotal = total
+                    cacheProgress = if (total > 0L) downloaded.toFloat() / total else 0f
+                }
+                cacheRevision++
+                cacheProgress = 1f
+                cacheStatusText = "缓存完成：第${episode}集"
+                Toast.makeText(context, "已缓存当前资源，可在本地播放", Toast.LENGTH_SHORT).show()
+            } catch (_: CancellationException) {
+                cacheStatusText = "已暂停，可继续缓存第${episode}集"
+            } catch (error: Throwable) {
+                cacheStatusText = "缓存失败：${error.message ?: "网络错误"}"
+                Toast.makeText(context, cacheStatusText, Toast.LENGTH_LONG).show()
+            } finally {
+                cachingEpisodes = false
+                cacheJob = null
+            }
+        }
+    }
 
     LaunchedEffect(detailScrollState, detailEntry) {
         snapshotFlow { detailScrollState.value }.collect { scrollY ->
@@ -115,45 +171,60 @@ fun DetailScreen(nav: NavController, dir: String, id: String) {
                             val lines = vm.resources?.playLines.orEmpty()
                             cachingEpisodes = true
                             cacheProgress = 0f
+                            cacheDownloaded = 0L
+                            cacheTotal = 0L
                             cacheStatusText = "正在解析并缓存 ${selected.size} 个资源…"
                             Toast.makeText(context, cacheStatusText, Toast.LENGTH_SHORT).show()
-                            scope.launch {
+                            cacheJob = scope.launch {
                                 var success = 0
                                 var failed = 0
-                                selected.forEachIndexed { selectedIndex, key ->
-                                    val parts = key.split("/", limit = 2)
-                                    val line = lines.firstOrNull { it.id == parts.getOrNull(0) }
-                                    val episode = parts.getOrNull(1)?.toIntOrNull()
-                                    if (line == null || episode == null) {
-                                        failed++
-                                        return@forEachIndexed
-                                    }
-                                    runCatching {
-                                        val directUrl = AppModule.repository.resolvePlayUrl(line.id, episode)
-                                            ?: error("未解析到播放地址")
-                                        val referer = "${AppModule.siteSettings.siteUrlNow}/py/${line.id}/$episode"
-                                        cacheStatusText = "正在缓存 ${selectedIndex + 1}/${selected.size}：${meta?.title.orEmpty()} 第${episode}集"
-                                        OfflineMediaStore.download(
-                                            context,
-                                            directUrl,
-                                            referer,
-                                            "${meta?.title.orEmpty()} · ${line.name} · 第${episode}集",
-                                        ) { downloaded, total ->
-                                            val itemProgress = if (total > 0L) downloaded.toFloat() / total else 0f
-                                            cacheProgress = ((selectedIndex + itemProgress) / selected.size).coerceIn(0f, 1f)
+                                try {
+                                    selected.forEachIndexed { selectedIndex, key ->
+                                        val parts = key.split("/", limit = 2)
+                                        val line = lines.firstOrNull { it.id == parts.getOrNull(0) }
+                                        val episode = parts.getOrNull(1)?.toIntOrNull()
+                                        if (line == null || episode == null) {
+                                            failed++
+                                            return@forEachIndexed
                                         }
-                                    }.onSuccess { success++ }.onFailure { failed++ }
+                                        try {
+                                            val directUrl = AppModule.repository.resolvePlayUrl(line.id, episode)
+                                                ?: error("未解析到播放地址")
+                                            val referer = "${AppModule.siteSettings.siteUrlNow}/py/${line.id}/$episode"
+                                            pausedEpisode = line to episode
+                                            cacheStatusText = "正在缓存 ${selectedIndex + 1}/${selected.size}：${meta?.title.orEmpty()} 第${episode}集"
+                                            OfflineMediaStore.download(
+                                                context,
+                                                directUrl,
+                                                referer,
+                                                "${meta?.title.orEmpty()} · ${line.name} · 第${episode}集",
+                                                resourceCacheKey(line, episode),
+                                                "detail/$dir/$id",
+                                            ) { downloaded, total ->
+                                                cacheDownloaded = downloaded
+                                                cacheTotal = total
+                                                val itemProgress = if (total > 0L) downloaded.toFloat() / total else 0f
+                                                cacheProgress = ((selectedIndex + itemProgress) / selected.size).coerceIn(0f, 1f)
+                                            }
+                                            success++
+                                        } catch (error: CancellationException) {
+                                            throw error
+                                        } catch (_: Throwable) {
+                                            failed++
+                                        }
+                                    }
+                                    cacheProgress = if (failed == 0) 1f else cacheProgress
+                                    cacheRevision++
+                                    cacheStatusText = if (failed == 0) "缓存完成：$success 个资源" else "缓存完成：成功 $success 个，失败 $failed 个"
+                                    cacheSelectionMode = false
+                                    selectedEpisodes = emptySet()
+                                    Toast.makeText(context, cacheStatusText, Toast.LENGTH_LONG).show()
+                                } catch (_: CancellationException) {
+                                    cacheStatusText = "已暂停，可在详情或缓存管理中继续"
+                                } finally {
+                                    cachingEpisodes = false
+                                    cacheJob = null
                                 }
-                                cachingEpisodes = false
-                                cacheProgress = if (failed == 0) 1f else cacheProgress
-                                cacheStatusText = if (failed == 0) "缓存完成：$success 个资源" else "缓存完成：成功 $success 个，失败 $failed 个"
-                                cacheSelectionMode = false
-                                selectedEpisodes = emptySet()
-                                Toast.makeText(
-                                    context,
-                                    cacheStatusText,
-                                    Toast.LENGTH_LONG,
-                                ).show()
                             }
                         } else {
                             cacheSelectionMode = true
@@ -220,6 +291,7 @@ fun DetailScreen(nav: NavController, dir: String, id: String) {
             val res = vm.resources
             val tabTitles = listOf(
                 "在线播放 ${res?.playLines?.sumOf { it.episodes.size } ?: 0}",
+                "本地播放 ${res?.playLines?.sumOf { line -> line.episodes.withIndex().count { (index, _) -> OfflineMediaStore.isCached(context, resourceCacheKey(line, index + 1)) } } ?: 0}",
                 "网盘资源 ${res?.clouds?.size ?: 0}",
                 "磁力资源 ${res?.magnets?.size ?: 0}",
             )
@@ -241,9 +313,21 @@ fun DetailScreen(nav: NavController, dir: String, id: String) {
             Spacer(Modifier.height(10.dp))
 
             if (cachingEpisodes || cacheStatusText.isNotBlank()) {
-                Text(cacheStatusText, style = MaterialTheme.typography.bodySmall)
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                    Text(cacheStatusText, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+                    if (cachingEpisodes) {
+                        IconButton(onClick = { cacheJob?.cancel() }) {
+                            Icon(Icons.Filled.Pause, contentDescription = "暂停缓存")
+                        }
+                    } else if (pausedEpisode != null && cacheStatusText.startsWith("已暂停")) {
+                        IconButton(onClick = { pausedEpisode?.let { cacheSingle(it.first, it.second) } }) {
+                            Icon(Icons.Filled.PlayArrow, contentDescription = "继续缓存")
+                        }
+                    }
+                }
                 if (cachingEpisodes) {
                     LinearProgressIndicator(progress = { cacheProgress }, modifier = Modifier.fillMaxWidth().padding(top = 6.dp))
+                    Text("已下载 ${formatCacheBytes(cacheDownloaded)} / ${if (cacheTotal > 0L) formatCacheBytes(cacheTotal) else "计算中"}", style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(top = 4.dp))
                 }
                 Spacer(Modifier.height(8.dp))
             }
@@ -258,6 +342,8 @@ fun DetailScreen(nav: NavController, dir: String, id: String) {
                         val key = "${line.id}/$episode"
                         selectedEpisodes = if (key in selectedEpisodes) selectedEpisodes - key else selectedEpisodes + key
                     },
+                    onLongCache = { line, episode -> cacheSingle(line, episode) },
+                    isCached = { line, episode -> OfflineMediaStore.isCached(context, resourceCacheKey(line, episode)) },
                 ) { line, episode ->
                     val key = "${line.id}/$episode"
                     if (resolvingKey != null) return@PlayList
@@ -279,7 +365,8 @@ fun DetailScreen(nav: NavController, dir: String, id: String) {
                                         "&episode=$episode" +
                                         "&episodeCount=${line.episodes.size}" +
                                         "&lineName=${Uri.encode(line.name)}" +
-                                        "&resourceTitle=${Uri.encode(meta?.title.orEmpty())}",
+                                        "&resourceTitle=${Uri.encode(meta?.title.orEmpty())}" +
+                                        "&cacheKey=${Uri.encode(resourceCacheKey(line, episode))}",
                                 )
                             } else {
                                 Toast.makeText(context, "未解析到直链，已尝试打开在线播放页", Toast.LENGTH_SHORT).show()
@@ -290,8 +377,19 @@ fun DetailScreen(nav: NavController, dir: String, id: String) {
                         }
                     }
                 }
-                1 -> CloudList(context, vm.resources?.clouds ?: emptyList())
-                2 -> MagnetList(context, vm.resources?.magnets ?: emptyList())
+                1 -> LocalPlayList(
+                    context = context,
+                    lines = vm.resources?.playLines.orEmpty(),
+                    cacheRevision = cacheRevision,
+                    onPlay = { line, episode ->
+                        val local = OfflineMediaStore.cachedUri(context, "", resourceCacheKey(line, episode))
+                        if (local != null) nav.navigate(
+                            "player/${Uri.encode(local.toString())}?lineId=${Uri.encode(line.id)}&episode=$episode&episodeCount=${line.episodes.size}&lineName=${Uri.encode(line.name)}&resourceTitle=${Uri.encode(meta?.title.orEmpty())}&cacheKey=${Uri.encode(resourceCacheKey(line, episode))}",
+                        )
+                    },
+                )
+                2 -> CloudList(context, vm.resources?.clouds ?: emptyList())
+                3 -> MagnetList(context, vm.resources?.magnets ?: emptyList())
             }
           }
         }
@@ -308,18 +406,21 @@ private fun InfoLine(label: String, value: String?) {
 }
 
 @Composable
+@OptIn(ExperimentalFoundationApi::class)
 private fun ResourceRow(
     title: String,
     subtitle: String? = null,
     isLoading: Boolean = false,
     selectionEnabled: Boolean = false,
     selected: Boolean = false,
+    cached: Boolean = false,
     onClick: () -> Unit,
+    onLongClick: () -> Unit = {},
 ) {
     Surface(
         shape = RoundedCornerShape(10.dp),
         color = MaterialTheme.colorScheme.surfaceVariant,
-        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).clickable(onClick = onClick),
+        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp).combinedClickable(onClick = onClick, onLongClick = onLongClick),
     ) {
         Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
             if (selectionEnabled) {
@@ -332,6 +433,7 @@ private fun ResourceRow(
                     Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
                 }
             }
+            if (cached) Text("已缓存", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
             if (isLoading) CircularProgressIndicator(Modifier.width(20.dp).height(20.dp), strokeWidth = 2.dp)
         }
     }
@@ -373,6 +475,8 @@ private fun PlayList(
     selectionMode: Boolean,
     selectedEpisodes: Set<String>,
     onToggleSelection: (line: com.filmvault.app.data.model.PlayLine, episode: Int) -> Unit,
+    onLongCache: (line: com.filmvault.app.data.model.PlayLine, episode: Int) -> Unit,
+    isCached: (line: com.filmvault.app.data.model.PlayLine, episode: Int) -> Boolean,
     onPlay: (line: com.filmvault.app.data.model.PlayLine, episode: Int) -> Unit,
 ) {
     if (lines.isEmpty()) EmptyHint("暂无在线播放线路")
@@ -384,10 +488,32 @@ private fun PlayList(
                 isLoading = resolvingKey == "${line.id}/${idx + 1}",
                 selectionEnabled = selectionMode,
                 selected = "${line.id}/${idx + 1}" in selectedEpisodes,
+                cached = isCached(line, idx + 1),
                 onClick = {
                     if (selectionMode) onToggleSelection(line, idx + 1) else onPlay(line, idx + 1)
                 },
+                onLongClick = { onLongCache(line, idx + 1) },
             )
+        }
+    }
+}
+
+@Composable
+private fun LocalPlayList(
+    context: android.content.Context,
+    lines: List<com.filmvault.app.data.model.PlayLine>,
+    cacheRevision: Int,
+    onPlay: (line: com.filmvault.app.data.model.PlayLine, episode: Int) -> Unit,
+) {
+    @Suppress("UNUSED_VARIABLE") val revision = cacheRevision
+    val cachedLines = lines.filter { line -> line.episodes.withIndex().any { (index, _) -> OfflineMediaStore.isCached(context, OfflineMediaStore.resourceKey("", "", line.id, index + 1)) } }
+    if (cachedLines.isEmpty()) EmptyHint("暂无本地缓存资源")
+    cachedLines.forEach { line ->
+        Text(line.name, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, modifier = Modifier.padding(vertical = 6.dp))
+        line.episodes.forEachIndexed { index, episode ->
+            if (OfflineMediaStore.isCached(context, OfflineMediaStore.resourceKey("", "", line.id, index + 1))) {
+                ResourceRow(title = episode.ifBlank { "本地资源" }, cached = true, onClick = { onPlay(line, index + 1) })
+            }
         }
     }
 }
@@ -397,4 +523,11 @@ private fun EmptyHint(text: String) {
     Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
         Text(text, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))
     }
+}
+
+private fun formatCacheBytes(bytes: Long): String = when {
+    bytes >= 1024L * 1024L * 1024L -> "%.2f GB".format(bytes / 1024.0 / 1024.0 / 1024.0)
+    bytes >= 1024L * 1024L -> "%.1f MB".format(bytes / 1024.0 / 1024.0)
+    bytes >= 1024L -> "%.1f KB".format(bytes / 1024.0)
+    else -> "$bytes B"
 }

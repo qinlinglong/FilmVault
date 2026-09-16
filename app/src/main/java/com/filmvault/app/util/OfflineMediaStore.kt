@@ -5,21 +5,24 @@ import android.net.Uri
 import com.filmvault.app.di.AppModule
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.CancellationException
 import java.io.File
+import java.io.FileOutputStream
 import java.net.URI
 import java.security.MessageDigest
 import java.util.Properties
 
 /** 应用私有离线缓存：渐进式媒体直接保存，未加密 HLS 保存清单和分片。 */
 object OfflineMediaStore {
-    data class CacheEntry(val sourceUrl: String, val label: String, val file: File) {
+    data class CacheEntry(val sourceUrl: String, val label: String, val file: File, val detailRoute: String = "", val completed: Boolean = true) {
         val bytes: Long get() = file.parentFile?.walkTopDown()?.filter { it.isFile }?.sumOf { it.length() } ?: file.length()
     }
 
-    suspend fun download(context: Context, sourceUrl: String, referer: String = AppModule.siteSettings.siteUrlNow, label: String = "", onProgress: (Long, Long) -> Unit = { _, _ -> }): File = withContext(Dispatchers.IO) {
+    suspend fun download(context: Context, sourceUrl: String, referer: String = AppModule.siteSettings.siteUrlNow, label: String = "", cacheKey: String = "", detailRoute: String = "", onProgress: (Long, Long) -> Unit = { _, _ -> }): File = withContext(Dispatchers.IO) {
         require(sourceUrl.isNotBlank()) { "播放地址为空" }
-        cachedFile(context, sourceUrl)?.let { return@withContext it }
-        val directory = File(cacheRoot(context), sourceKey(sourceUrl)).apply { mkdirs() }
+        cachedFile(context, sourceUrl, cacheKey)?.let { return@withContext it }
+        val directory = File(cacheRoot(context), sourceKey(cacheKey.ifBlank { sourceUrl })).apply { mkdirs() }
+        writeMetadata(context, sourceUrl, cacheKey, detailRoute, label, complete = false)
         try {
             AppModule.apiClient.openMediaResponse(sourceUrl, referer).use { response ->
                 check(response.isSuccessful) { "下载失败：HTTP ${response.code}" }
@@ -30,43 +33,61 @@ object OfflineMediaStore {
                 val hls = sourceUrl.substringBefore('?').endsWith(".m3u8", true) || contentType.contains("mpegurl", true)
                 val output = if (hls) downloadHls(sourceUrl, body.string(), directory, referer, onProgress) else {
                     val file = File(directory, "media${extensionFor(sourceUrl, contentType)}")
+                    val resumeFrom = file.takeIf { it.isFile }?.length() ?: 0L
+                    val requestUrl = sourceUrl
+                    val responseBody = if (resumeFrom > 0L) {
+                        AppModule.apiClient.openMediaResponseWithRange(requestUrl, referer, resumeFrom)
+                    } else null
+                    if (responseBody != null && responseBody.code !in 200..299) responseBody.close()
                     val total = body.contentLength().coerceAtLeast(0L)
-                    var done = 0L
-                    body.byteStream().use { input -> file.outputStream().use { outputStream ->
+                    val responseForStream = if (resumeFrom > 0L && responseBody?.isSuccessful == true) responseBody else null
+                    val actualTotal = if (responseForStream != null) resumeFrom + (responseForStream.body?.contentLength()?.coerceAtLeast(0L) ?: 0L) else total
+                    var done = if (responseForStream != null) resumeFrom else 0L
+                    if (responseForStream == null && resumeFrom > 0L) file.delete()
+                    val streamBody = responseForStream?.body ?: body
+                    streamBody.byteStream().use { input -> FileOutputStream(file, responseForStream != null).use { outputStream ->
                         val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
                         while (true) {
                             val count = input.read(buffer)
                             if (count < 0) break
                             outputStream.write(buffer, 0, count)
                             done += count
-                            onProgress(done, total)
+                            onProgress(done, actualTotal)
                         }
                     } }
-                    onProgress(done, total)
+                    onProgress(done, actualTotal)
+                    responseForStream?.close()
                     file
                 }
-                if (label.isNotBlank()) writeMetadata(context, sourceUrl, label)
+                writeMetadata(context, sourceUrl, cacheKey, detailRoute, label, complete = true)
                 output
             }
         } catch (error: Throwable) {
-            directory.deleteRecursively()
+            if (error is CancellationException) throw error
             throw error
         }
     }
 
-    fun cachedUri(context: Context, sourceUrl: String): Uri? = cachedFile(context, sourceUrl)?.let(Uri::fromFile)
+    fun cachedUri(context: Context, sourceUrl: String, cacheKey: String = ""): Uri? = cachedFile(context, sourceUrl, cacheKey)?.let(Uri::fromFile)
+    fun isCached(context: Context, cacheKey: String): Boolean = cachedFile(context, "", cacheKey) != null
 
     fun list(context: Context): List<CacheEntry> = cacheRoot(context).listFiles().orEmpty().mapNotNull { directory ->
         val media = directory.walkTopDown().firstOrNull { it.isFile && it.name != METADATA && it.length() > 0L } ?: return@mapNotNull null
         val properties = Properties()
         File(directory, METADATA).takeIf { it.isFile }?.inputStream()?.use(properties::load)
-        CacheEntry(properties.getProperty("url", ""), properties.getProperty("label", media.name), media)
+        CacheEntry(properties.getProperty("url", ""), properties.getProperty("label", media.name), media, properties.getProperty("detailRoute", ""), properties.getProperty("complete", "false") == "true")
     }.sortedByDescending { it.file.parentFile?.lastModified() ?: it.file.lastModified() }
 
     fun delete(entry: CacheEntry): Boolean = entry.file.parentFile?.deleteRecursively() == true
     fun cacheSize(context: Context): Long = cacheRoot(context).walkTopDown().filter { it.isFile }.sumOf { it.length() }
 
-    private fun cachedFile(context: Context, sourceUrl: String): File? = File(cacheRoot(context), sourceKey(sourceUrl)).listFiles().orEmpty().firstOrNull { it.isFile && it.name != METADATA && it.length() > 0L }
+    private fun cachedFile(context: Context, sourceUrl: String, cacheKey: String = ""): File? {
+        val directory = File(cacheRoot(context), sourceKey(cacheKey.ifBlank { sourceUrl }))
+        val properties = Properties()
+        File(directory, METADATA).takeIf { it.isFile }?.inputStream()?.use(properties::load)
+        if (properties.getProperty("complete") != "true") return null
+        return directory.listFiles().orEmpty().firstOrNull { it.isFile && it.name != METADATA && it.length() > 0L }
+    }
 
     private fun downloadHls(sourceUrl: String, playlist: String, directory: File, referer: String, onProgress: (Long, Long) -> Unit): File {
         check(!playlist.contains("#EXT-X-KEY")) { "加密视频暂不支持离线缓存" }
@@ -88,7 +109,11 @@ object OfflineMediaStore {
             if (value.isEmpty() || value.startsWith("#")) line else {
                 val segmentUrl = mediaBase.resolve(value).toString()
                 val target = File(segmentDirectory, "segment-${index++}${extensionFor(segmentUrl, "")}")
-                downloadBinary(segmentUrl, target, referer)
+                if (!target.isFile || target.length() == 0L) {
+                    val partial = File(target.parentFile, "${target.name}.part")
+                    downloadBinary(segmentUrl, partial, referer)
+                    check(partial.renameTo(target) || target.isFile) { "保存分片失败" }
+                }
                 completed++
                 onProgress(completed, segmentCount.toLong())
                 "segments/${target.name}"
@@ -112,9 +137,10 @@ object OfflineMediaStore {
     private fun sourceKey(value: String): String = MessageDigest.getInstance("SHA-256").digest(value.toByteArray()).joinToString("") { "%02x".format(it) }
     private const val METADATA = "metadata.properties"
     private fun cacheRoot(context: Context): File = File(context.filesDir, "offline-media")
-    private fun writeMetadata(context: Context, sourceUrl: String, label: String) {
-        val properties = Properties().apply { setProperty("url", sourceUrl); setProperty("label", label) }
-        File(cacheRoot(context), sourceKey(sourceUrl)).apply { mkdirs() }.resolve(METADATA).outputStream().use { output -> properties.store(output, null) }
+    fun resourceKey(dir: String, id: String, lineId: String, episode: Int): String = "play/$dir/$id/$lineId/$episode"
+    private fun writeMetadata(context: Context, sourceUrl: String, cacheKey: String, detailRoute: String, label: String, complete: Boolean) {
+        val properties = Properties().apply { setProperty("url", sourceUrl); setProperty("cacheKey", cacheKey); setProperty("detailRoute", detailRoute); setProperty("label", label); setProperty("complete", complete.toString()) }
+        File(cacheRoot(context), sourceKey(cacheKey.ifBlank { sourceUrl })).apply { mkdirs() }.resolve(METADATA).outputStream().use { output -> properties.store(output, null) }
     }
 
     private fun extensionFor(url: String, contentType: String): String = when {

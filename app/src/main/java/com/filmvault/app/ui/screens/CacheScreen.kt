@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
@@ -33,7 +34,9 @@ import com.filmvault.app.util.OfflineMediaStore
 fun CacheScreen(nav: NavController) {
     val context = LocalContext.current
     var entries by remember { mutableStateOf(emptyList<OfflineMediaStore.CacheEntry>()) }
+    var expandedGroups by remember { mutableStateOf(setOf<String>()) }
     LaunchedEffect(Unit) { entries = OfflineMediaStore.list(context) }
+    val groups = entries.groupBy { it.label.substringBefore(" · ").ifBlank { "未命名资源" } }
 
     Column(Modifier.fillMaxSize()) {
         Surface(shadowElevation = 4.dp) {
@@ -55,17 +58,45 @@ fun CacheScreen(nav: NavController) {
                 Modifier.fillMaxWidth().weight(1f).padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                items(entries, key = { it.file.parentFile?.absolutePath ?: it.file.absolutePath }) { entry ->
-                    Surface(shape = MaterialTheme.shapes.medium, color = MaterialTheme.colorScheme.surfaceVariant) {
-                        Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Column(Modifier.weight(1f)) {
-                                Text(entry.label, style = MaterialTheme.typography.bodyLarge)
-                                Text("${formatBytes(entry.bytes)} · ${entry.file.extension.uppercase()}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f))
+                items(groups.entries.toList(), key = { it.key }) { (title, groupEntries) ->
+                    val expanded = title in expandedGroups
+                    Surface(
+                        shape = MaterialTheme.shapes.medium,
+                        color = MaterialTheme.colorScheme.surfaceVariant,
+                        modifier = Modifier.fillMaxWidth().clickable {
+                            val route = groupEntries.firstOrNull()?.detailRoute
+                            if (!route.isNullOrBlank()) nav.navigate(route) else expandedGroups = if (expanded) expandedGroups - title else expandedGroups + title
+                        },
+                    ) {
+                        Column(Modifier.fillMaxWidth().padding(14.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Column(Modifier.weight(1f)) {
+                                    Text(title, style = MaterialTheme.typography.bodyLarge)
+                                    Text(
+                                        "${groupEntries.size} 个资源 · ${formatBytes(groupEntries.sumOf { it.bytes })} · " +
+                                            if (groupEntries.all { it.completed }) "已完成" else "有未完成任务",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
+                                    )
+                                }
+                                Text(if (expanded) "收起" else "查看详情", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
                             }
-                            IconButton(onClick = {
-                                OfflineMediaStore.delete(entry)
-                                entries = OfflineMediaStore.list(context)
-                            }) { Icon(Icons.Filled.Delete, contentDescription = "删除缓存") }
+                            if (expanded) groupEntries.forEach { entry ->
+                                Row(Modifier.fillMaxWidth().padding(top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    Column(Modifier.weight(1f)) {
+                                        Text(entry.label.removePrefix("$title · "), style = MaterialTheme.typography.bodyMedium)
+                                        Text(
+                                            "${if (entry.completed) "已完成" else "已暂停，可继续"} · ${formatBytes(entry.bytes)} · ${entry.file.extension.uppercase()}",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
+                                        )
+                                    }
+                                    IconButton(onClick = {
+                                        OfflineMediaStore.delete(entry)
+                                        entries = OfflineMediaStore.list(context)
+                                    }) { Icon(Icons.Filled.Delete, contentDescription = "删除缓存") }
+                                }
+                            }
                         }
                     }
                 }

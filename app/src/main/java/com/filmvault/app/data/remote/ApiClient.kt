@@ -85,6 +85,10 @@ class ApiClient(context: Context, private val siteSettings: SiteSettingsStore) {
             .build(),
     ).execute()
 
+    fun openMediaResponseWithRange(url: String, referer: String, offset: Long): Response = client.newCall(
+        Request.Builder().url(url).header("Referer", referer).header("Range", "bytes=$offset-").build(),
+    ).execute()
+
     private suspend fun executeWithVerification(request: () -> okhttp3.Response): okhttp3.Response {
         val observedGeneration = verificationGeneration
         var response = request()

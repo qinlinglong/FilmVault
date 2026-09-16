@@ -174,6 +174,7 @@ fun PlayerScreen(
     episodeCount: Int = 1,
     lineName: String = "",
     resourceTitle: String = "",
+    cacheKey: String = "",
 ) {
     val context = LocalContext.current
     val view = LocalView.current
@@ -201,7 +202,7 @@ fun PlayerScreen(
     var activeSourceUrl by remember { mutableStateOf(url) }
     var downloadStatus by remember {
         mutableStateOf(
-            if (OfflineMediaStore.cachedUri(context, url) != null) DownloadStatus.DOWNLOADED else DownloadStatus.IDLE,
+            if (OfflineMediaStore.cachedUri(context, url, cacheKey) != null) DownloadStatus.DOWNLOADED else DownloadStatus.IDLE,
         )
     }
     val episodeTotal = episodeCount.coerceAtLeast(1)
@@ -222,7 +223,7 @@ fun PlayerScreen(
     }
     val player = remember {
         ExoPlayer.Builder(context).setTrackSelector(trackSelector).build().apply {
-            val playbackUri = OfflineMediaStore.cachedUri(context, url)?.toString() ?: url
+            val playbackUri = OfflineMediaStore.cachedUri(context, url, cacheKey)?.toString() ?: url
             setMediaItem(MediaItem.fromUri(playbackUri))
             prepare()
             playWhenReady = true
@@ -256,10 +257,11 @@ fun PlayerScreen(
                 } else {
                     currentEpisode = episode
                     activeSourceUrl = nextUrl
-                    downloadStatus = if (OfflineMediaStore.cachedUri(context, nextUrl) != null) {
+                    val nextCacheKey = if (cacheKey.isNotBlank()) "${cacheKey.substringBeforeLast('/')}/$episode" else if (lineId.isNotBlank()) "play/$lineId/$episode" else ""
+                    downloadStatus = if (OfflineMediaStore.cachedUri(context, nextUrl, nextCacheKey) != null) {
                         DownloadStatus.DOWNLOADED
                     } else DownloadStatus.IDLE
-                    val playbackUri = OfflineMediaStore.cachedUri(context, nextUrl)?.toString() ?: nextUrl
+                    val playbackUri = OfflineMediaStore.cachedUri(context, nextUrl, nextCacheKey)?.toString() ?: nextUrl
                     player.setMediaItem(MediaItem.fromUri(playbackUri), true)
                     player.prepare()
                     player.playWhenReady = true
@@ -284,7 +286,10 @@ fun PlayerScreen(
                 val playbackReferer = if (lineId.isNotBlank()) {
                     "${AppModule.siteSettings.siteUrlNow}/py/$lineId/$currentEpisode"
                 } else AppModule.siteSettings.siteUrlNow
-                OfflineMediaStore.download(context, freshUrl, playbackReferer)
+                val stableKey = if (cacheKey.isNotBlank()) {
+                    "${cacheKey.substringBeforeLast('/')}/$currentEpisode"
+                } else if (lineId.isNotBlank()) "play/$lineId/$currentEpisode" else ""
+                OfflineMediaStore.download(context, freshUrl, playbackReferer, resourceTitle, stableKey)
                 downloadStatus = DownloadStatus.DOWNLOADED
                 Toast.makeText(context, "已缓存当前集，可离线播放", Toast.LENGTH_SHORT).show()
             } catch (error: Throwable) {
