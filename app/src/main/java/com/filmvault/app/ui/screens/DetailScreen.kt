@@ -365,10 +365,6 @@ fun DetailScreen(nav: NavController, dir: String, id: String, localOnly: Boolean
                         }
                     }
                 }
-                if (cachingEpisodes) {
-                    LinearProgressIndicator(progress = { cacheProgress }, modifier = Modifier.fillMaxWidth().padding(top = 6.dp))
-                    Text("已下载 ${formatCacheBytes(cacheDownloaded)} / ${if (cacheTotal > 0L) formatCacheBytes(cacheTotal) else "计算中"}", style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(top = 4.dp))
-                }
                 Spacer(Modifier.height(8.dp))
             }
 
