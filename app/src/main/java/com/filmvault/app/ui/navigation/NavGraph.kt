@@ -68,15 +68,16 @@ fun AppNavHost(startDestination: String = "auth") {
             CatalogScreen(nav, dir, label, sort, year)
         }
         composable(
-            route = "detail/{dir}/{id}",
+            route = "detail/{dir}/{id}?localOnly={localOnly}",
             arguments = listOf(
                 navArgument("dir") { type = NavType.StringType },
                 navArgument("id") { type = NavType.StringType },
+                navArgument("localOnly") { type = NavType.BoolType; defaultValue = false },
             ),
         ) { back ->
             val dir = back.arguments?.getString("dir") ?: "mv"
             val id = back.arguments?.getString("id") ?: ""
-            DetailScreen(nav, dir, id)
+            DetailScreen(nav, dir, id, back.arguments?.getBoolean("localOnly") == true)
         }
         composable(
             route = "player/{url}?lineId={lineId}&episode={episode}&episodeCount={episodeCount}&lineName={lineName}&resourceTitle={resourceTitle}&cacheKey={cacheKey}",

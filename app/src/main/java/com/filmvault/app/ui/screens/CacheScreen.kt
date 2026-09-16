@@ -13,6 +13,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -24,19 +26,31 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import com.filmvault.app.util.OfflineMediaStore
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 @Composable
 fun CacheScreen(nav: NavController) {
     val context = LocalContext.current
     var entries by remember { mutableStateOf(emptyList<OfflineMediaStore.CacheEntry>()) }
     var expandedGroups by remember { mutableStateOf(setOf<String>()) }
-    LaunchedEffect(Unit) { entries = OfflineMediaStore.list(context) }
+    val scope = rememberCoroutineScope()
+    suspend fun refresh() { entries = withContext(Dispatchers.IO) { OfflineMediaStore.list(context) } }
+    LaunchedEffect(Unit) {
+        while (true) {
+            refresh()
+            delay(500)
+        }
+    }
     val groups = entries.groupBy { it.label.substringBefore(" · ").ifBlank { "未命名资源" } }
 
     Column(Modifier.fillMaxSize()) {
@@ -64,10 +78,7 @@ fun CacheScreen(nav: NavController) {
                     Surface(
                         shape = MaterialTheme.shapes.medium,
                         color = MaterialTheme.colorScheme.surfaceVariant,
-                        modifier = Modifier.fillMaxWidth().clickable {
-                            val route = groupEntries.firstOrNull()?.detailRoute
-                            if (!route.isNullOrBlank()) nav.navigate(route) else expandedGroups = if (expanded) expandedGroups - title else expandedGroups + title
-                        },
+                        modifier = Modifier.fillMaxWidth().clickable { expandedGroups = if (expanded) expandedGroups - title else expandedGroups + title },
                     ) {
                         Column(Modifier.fillMaxWidth().padding(14.dp)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -80,7 +91,14 @@ fun CacheScreen(nav: NavController) {
                                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
                                     )
                                 }
-                                Text(if (expanded) "收起" else "查看详情", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                                Text(
+                                    "查看详情",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.clickable {
+                                        groupEntries.firstOrNull()?.detailRoute?.takeIf { it.isNotBlank() }?.let { nav.navigate("$it?localOnly=true") }
+                                    },
+                                )
                             }
                             if (expanded) groupEntries.forEach { entry ->
                                 Row(
@@ -103,14 +121,54 @@ fun CacheScreen(nav: NavController) {
                                             style = MaterialTheme.typography.bodyMedium,
                                         )
                                         Text(
-                                            "${if (entry.completed) "已完成" else "已暂停，可继续"} · ${formatBytes(entry.bytes)} · ${entry.file.extension.uppercase()}",
+                                            "${when {
+                                                entry.completed -> "已完成"
+                                                OfflineMediaStore.isActive(entry.cacheKey) -> "下载中"
+                                                entry.state == "failed" -> "下载失败，可继续"
+                                                else -> "已暂停，可继续"
+                                            }} · ${formatBytes(entry.bytes)}" +
+                                                (if (entry.total > 0L) " / ${formatBytes(entry.total)}" else "") +
+                                                " · ${entry.file.extension.uppercase()}",
                                             style = MaterialTheme.typography.bodySmall,
                                             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
                                         )
+                                        if (!entry.completed && entry.total > 0L) {
+                                            androidx.compose.material3.LinearProgressIndicator(
+                                                progress = { entry.progress },
+                                                modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                                            )
+                                        }
+                                    }
+                                    if (!entry.completed) {
+                                        IconButton(onClick = {
+                                            if (OfflineMediaStore.isActive(entry.cacheKey)) {
+                                                OfflineMediaStore.pause(entry.cacheKey)
+                                                scope.launch { refresh() }
+                                            } else if (entry.sourceUrl.isNotBlank()) {
+                                                scope.launch {
+                                                    runCatching {
+                                                        OfflineMediaStore.download(
+                                                            context,
+                                                            entry.sourceUrl,
+                                                            entry.referer,
+                                                            entry.label,
+                                                            entry.cacheKey,
+                                                            entry.detailRoute,
+                                                        )
+                                                    }
+                                                    refresh()
+                                                }
+                                            }
+                                        }) {
+                                            Icon(
+                                                if (OfflineMediaStore.isActive(entry.cacheKey)) Icons.Filled.Pause else Icons.Filled.PlayArrow,
+                                                contentDescription = if (OfflineMediaStore.isActive(entry.cacheKey)) "暂停缓存" else "继续缓存",
+                                            )
+                                        }
                                     }
                                     IconButton(onClick = {
                                         OfflineMediaStore.delete(entry)
-                                        entries = OfflineMediaStore.list(context)
+                                        scope.launch { refresh() }
                                     }) { Icon(Icons.Filled.Delete, contentDescription = "删除缓存") }
                                 }
                             }

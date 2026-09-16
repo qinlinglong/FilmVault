@@ -6,6 +6,8 @@ import com.filmvault.app.di.AppModule
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
+import kotlin.coroutines.coroutineContext
 import java.io.File
 import java.io.FileOutputStream
 import java.net.URI
@@ -14,15 +16,43 @@ import java.util.Properties
 
 /** 应用私有离线缓存：渐进式媒体直接保存，未加密 HLS 保存清单和分片。 */
 object OfflineMediaStore {
-    data class CacheEntry(val sourceUrl: String, val label: String, val file: File, val detailRoute: String = "", val completed: Boolean = true, val cacheKey: String = "") {
+    data class CacheEntry(
+        val sourceUrl: String,
+        val label: String,
+        val file: File,
+        val detailRoute: String = "",
+        val completed: Boolean = true,
+        val cacheKey: String = "",
+        val referer: String = "",
+        val downloaded: Long = 0L,
+        val total: Long = 0L,
+        val state: String = if (completed) "completed" else "paused",
+    ) {
         val bytes: Long get() = file.parentFile?.walkTopDown()?.filter { it.isFile }?.sumOf { it.length() } ?: file.length()
+        val progress: Float get() = if (total > 0L) (downloaded.toFloat() / total).coerceIn(0f, 1f) else 0f
     }
+
+    private val activeJobs = mutableMapOf<String, Job>()
 
     suspend fun download(context: Context, sourceUrl: String, referer: String = AppModule.siteSettings.siteUrlNow, label: String = "", cacheKey: String = "", detailRoute: String = "", onProgress: (Long, Long) -> Unit = { _, _ -> }): File = withContext(Dispatchers.IO) {
         require(sourceUrl.isNotBlank()) { "播放地址为空" }
         cachedFile(context, sourceUrl, cacheKey)?.let { return@withContext it }
+        val taskKey = cacheKey.ifBlank { sourceUrl }
+        val taskJob = coroutineContext[Job]
+        synchronized(activeJobs) { if (taskJob != null) activeJobs[taskKey] = taskJob }
         val directory = File(cacheRoot(context), sourceKey(cacheKey.ifBlank { sourceUrl })).apply { mkdirs() }
-        writeMetadata(context, sourceUrl, cacheKey, detailRoute, label, complete = false)
+        writeMetadata(context, sourceUrl, referer, cacheKey, detailRoute, label, complete = false, state = "downloading", downloaded = 0L, total = 0L)
+        var lastPersistAt = 0L
+        var lastPersistBytes = 0L
+        fun report(downloaded: Long, total: Long) {
+            onProgress(downloaded, total)
+            val now = System.currentTimeMillis()
+            if (downloaded == total || now - lastPersistAt >= 500L || downloaded - lastPersistBytes >= 256L * 1024L) {
+                writeMetadata(context, sourceUrl, referer, cacheKey, detailRoute, label, complete = false, state = "downloading", downloaded = downloaded, total = total)
+                lastPersistAt = now
+                lastPersistBytes = downloaded
+            }
+        }
         try {
             AppModule.apiClient.openMediaResponse(sourceUrl, referer).use { response ->
                 check(response.isSuccessful) { "下载失败：HTTP ${response.code}" }
@@ -31,7 +61,7 @@ object OfflineMediaStore {
                 check(!contentType.contains("text/html", true)) { "播放地址已失效或被站点拒绝" }
                 check(!sourceUrl.substringBefore('?').endsWith(".mpd", true) && !contentType.contains("dash", true)) { "DASH 视频暂不支持离线缓存" }
                 val hls = sourceUrl.substringBefore('?').endsWith(".m3u8", true) || contentType.contains("mpegurl", true)
-                val output = if (hls) downloadHls(sourceUrl, body.string(), directory, referer, onProgress) else {
+                val output = if (hls) downloadHls(sourceUrl, body.string(), directory, referer, ::report) else {
                     val file = File(directory, "media${extensionFor(sourceUrl, contentType)}")
                     val resumeFrom = file.takeIf { it.isFile }?.length() ?: 0L
                     val requestUrl = sourceUrl
@@ -52,20 +82,31 @@ object OfflineMediaStore {
                             if (count < 0) break
                             outputStream.write(buffer, 0, count)
                             done += count
-                            onProgress(done, actualTotal)
+                            report(done, actualTotal)
                         }
                     } }
-                    onProgress(done, actualTotal)
+                    report(done, actualTotal)
                     responseForStream?.close()
                     file
                 }
-                writeMetadata(context, sourceUrl, cacheKey, detailRoute, label, complete = true)
+                writeMetadata(context, sourceUrl, referer, cacheKey, detailRoute, label, complete = true, state = "completed", downloaded = outputBytes(output), total = outputBytes(output))
                 output
             }
         } catch (error: Throwable) {
-            if (error is CancellationException) throw error
+            val state = if (error is CancellationException) "paused" else "failed"
+            val current = list(context).firstOrNull { it.cacheKey == cacheKey }
+            writeMetadata(context, sourceUrl, referer, cacheKey, detailRoute, label, complete = false, state = state, downloaded = current?.bytes ?: 0L, total = current?.total ?: 0L)
             throw error
+        } finally {
+            synchronized(activeJobs) { if (activeJobs[taskKey] == taskJob) activeJobs.remove(taskKey) }
         }
+    }
+
+    fun isActive(cacheKey: String): Boolean = synchronized(activeJobs) { activeJobs[cacheKey]?.isActive == true }
+    fun pause(cacheKey: String): Boolean = synchronized(activeJobs) {
+        val job = activeJobs.remove(cacheKey)
+        job?.cancel()
+        job != null
     }
 
     fun cachedUri(context: Context, sourceUrl: String, cacheKey: String = ""): Uri? = cachedFile(context, sourceUrl, cacheKey)?.let(Uri::fromFile)
@@ -82,6 +123,10 @@ object OfflineMediaStore {
             detailRoute = properties.getProperty("detailRoute", ""),
             completed = properties.getProperty("complete", "false") == "true",
             cacheKey = properties.getProperty("cacheKey", ""),
+            referer = properties.getProperty("referer", ""),
+            downloaded = properties.getProperty("downloaded", "0").toLongOrNull() ?: 0L,
+            total = properties.getProperty("total", "0").toLongOrNull() ?: 0L,
+            state = properties.getProperty("state", if (properties.getProperty("complete") == "true") "completed" else "paused"),
         )
     }.sortedByDescending { it.file.parentFile?.lastModified() ?: it.file.lastModified() }
 
@@ -145,10 +190,16 @@ object OfflineMediaStore {
     private const val METADATA = "metadata.properties"
     private fun cacheRoot(context: Context): File = File(context.filesDir, "offline-media")
     fun resourceKey(dir: String, id: String, lineId: String, episode: Int): String = "play/$dir/$id/$lineId/$episode"
-    private fun writeMetadata(context: Context, sourceUrl: String, cacheKey: String, detailRoute: String, label: String, complete: Boolean) {
-        val properties = Properties().apply { setProperty("url", sourceUrl); setProperty("cacheKey", cacheKey); setProperty("detailRoute", detailRoute); setProperty("label", label); setProperty("complete", complete.toString()) }
+    private fun writeMetadata(context: Context, sourceUrl: String, referer: String, cacheKey: String, detailRoute: String, label: String, complete: Boolean, state: String, downloaded: Long, total: Long) {
+        val properties = Properties().apply {
+            setProperty("url", sourceUrl); setProperty("referer", referer); setProperty("cacheKey", cacheKey)
+            setProperty("detailRoute", detailRoute); setProperty("label", label); setProperty("complete", complete.toString())
+            setProperty("state", state); setProperty("downloaded", downloaded.toString()); setProperty("total", total.toString())
+        }
         File(cacheRoot(context), sourceKey(cacheKey.ifBlank { sourceUrl })).apply { mkdirs() }.resolve(METADATA).outputStream().use { output -> properties.store(output, null) }
     }
+
+    private fun outputBytes(file: File): Long = file.parentFile?.walkTopDown()?.filter { it.isFile }?.sumOf { it.length() } ?: file.length()
 
     private fun extensionFor(url: String, contentType: String): String = when {
         url.substringBefore('?').endsWith(".m3u8", true) || contentType.contains("mpegurl", true) -> ".m3u8"
