@@ -8,6 +8,8 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlin.coroutines.coroutineContext
 import java.io.File
 import java.io.FileOutputStream
@@ -38,6 +40,8 @@ object OfflineMediaStore {
     private val activeJobs = mutableMapOf<String, Job>()
     /** 不依赖 Job.isActive 的活动任务标记，避免 IO 刷新与协程收尾之间出现短暂误判。 */
     private val activeKeys = mutableSetOf<String>()
+    /** 所有入口共享同一个下载闸门，逐条点击也不会突破最多 3 路并行。 */
+    private val downloadGate = Semaphore(3)
 
     suspend fun download(context: Context, sourceUrl: String, referer: String = AppModule.siteSettings.siteUrlNow, label: String = "", cacheKey: String = "", detailRoute: String = "", posterUrl: String? = null, onProgress: (Long, Long) -> Unit = { _, _ -> }): File = withContext(Dispatchers.IO) {
         require(sourceUrl.isNotBlank()) { "播放地址为空" }
@@ -51,6 +55,9 @@ object OfflineMediaStore {
             activeKeys += taskKey
             if (taskJob != null) activeJobs[taskKey] = taskJob
         }
+        // 先登记任务再等待名额：等待中的任务也能被“全部暂停”及时取消。
+        downloadGate.withPermit {
+        try {
         val directory = File(cacheRoot(context), sourceKey(cacheKey.ifBlank { sourceUrl })).apply { mkdirs() }
         writeMetadata(context, sourceUrl, referer, cacheKey, detailRoute, label, metadataPosterUrl, complete = false, state = "downloading", downloaded = 0L, total = 0L)
         var lastPersistAt = 0L
@@ -64,7 +71,6 @@ object OfflineMediaStore {
                 lastPersistBytes = downloaded
             }
         }
-        try {
             AppModule.apiClient.openMediaResponse(sourceUrl, referer).use { response ->
                 check(response.isSuccessful) { "下载失败：HTTP ${response.code}" }
                 val body = response.body ?: error("下载内容为空")
@@ -115,6 +121,7 @@ object OfflineMediaStore {
                 activeKeys.remove(taskKey)
                 if (activeJobs[taskKey] == taskJob) activeJobs.remove(taskKey)
             }
+        }
         }
     }
 
