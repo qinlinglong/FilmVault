@@ -36,6 +36,8 @@ object OfflineMediaStore {
     }
 
     private val activeJobs = mutableMapOf<String, Job>()
+    /** 不依赖 Job.isActive 的活动任务标记，避免 IO 刷新与协程收尾之间出现短暂误判。 */
+    private val activeKeys = mutableSetOf<String>()
 
     suspend fun download(context: Context, sourceUrl: String, referer: String = AppModule.siteSettings.siteUrlNow, label: String = "", cacheKey: String = "", detailRoute: String = "", posterUrl: String? = null, onProgress: (Long, Long) -> Unit = { _, _ -> }): File = withContext(Dispatchers.IO) {
         require(sourceUrl.isNotBlank()) { "播放地址为空" }
@@ -45,7 +47,8 @@ object OfflineMediaStore {
         val metadataPosterUrl = posterUrl ?: existingEntry?.posterUrl
         val taskJob = coroutineContext[Job]
         synchronized(activeJobs) {
-            check(activeJobs[taskKey]?.isActive != true) { "该资源正在下载" }
+            check(taskKey !in activeKeys) { "该资源正在下载" }
+            activeKeys += taskKey
             if (taskJob != null) activeJobs[taskKey] = taskJob
         }
         val directory = File(cacheRoot(context), sourceKey(cacheKey.ifBlank { sourceUrl })).apply { mkdirs() }
@@ -108,14 +111,17 @@ object OfflineMediaStore {
             writeMetadata(context, sourceUrl, referer, cacheKey, detailRoute, label, metadataPosterUrl ?: current?.posterUrl, complete = false, state = state, downloaded = current?.bytes ?: 0L, total = current?.total ?: 0L)
             throw error
         } finally {
-            synchronized(activeJobs) { if (activeJobs[taskKey] == taskJob) activeJobs.remove(taskKey) }
+            synchronized(activeJobs) {
+                activeKeys.remove(taskKey)
+                if (activeJobs[taskKey] == taskJob) activeJobs.remove(taskKey)
+            }
         }
     }
 
-    fun isActive(cacheKey: String): Boolean = synchronized(activeJobs) { activeJobs[cacheKey]?.isActive == true }
+    fun isActive(cacheKey: String): Boolean = synchronized(activeJobs) { cacheKey in activeKeys }
     suspend fun pause(cacheKey: String): Boolean {
         val job = synchronized(activeJobs) { activeJobs[cacheKey] }
-        if (job == null) return false
+        if (job == null) return synchronized(activeJobs) { cacheKey in activeKeys }
         job.cancelAndJoin()
         synchronized(activeJobs) {
             if (activeJobs[cacheKey] == job) activeJobs.remove(cacheKey)
