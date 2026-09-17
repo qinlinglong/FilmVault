@@ -12,8 +12,8 @@ android {
         applicationId = "com.filmvault.app"
         minSdk = 24
         targetSdk = 34
-        versionCode = 70
-        versionName = "2.1.14"
+        versionCode = 71
+        versionName = "2.1.15"
     }
 
     signingConfigs {
