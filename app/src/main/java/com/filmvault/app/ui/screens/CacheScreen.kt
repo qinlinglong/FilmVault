@@ -123,20 +123,46 @@ fun CacheScreen(nav: NavController) {
                     onClick = {
                         if (allJob?.isActive == true) return@IconButton
                         allJob = scope.launch {
+                            var successCount = 0
+                            var failedCount = 0
+                            var cancelled = false
                             try {
                                 val pending = OfflineMediaStore.list(context)
                                     .filter { !it.completed && it.sourceUrl.isNotBlank() && !OfflineMediaStore.isActive(it.cacheKey) }
+                                if (pending.isEmpty()) {
+                                    Toast.makeText(context, "没有可开始的缓存任务，请先在详情页添加资源", Toast.LENGTH_SHORT).show()
+                                    return@launch
+                                }
                                 pending.chunked(3).forEach { batch ->
                                     coroutineScope {
-                                        batch.map { entry -> async { runCatching { downloadEntry(entry) } } }.awaitAll()
+                                        batch.map { entry -> async {
+                                            try {
+                                                downloadEntry(entry)
+                                                true
+                                            } catch (error: kotlinx.coroutines.CancellationException) {
+                                                throw error
+                                            } catch (_: Throwable) {
+                                                false
+                                            }
+                                        } }.awaitAll().forEach { success ->
+                                            if (success) successCount++ else failedCount++
+                                        }
                                     }
                                     refresh()
                                 }
                             } catch (_: kotlinx.coroutines.CancellationException) {
                                 // 全部暂停时主动取消调度，不弹出失败提示。
+                                cancelled = true
                             } finally {
                                 allJob = null
                                 refresh()
+                            }
+                            if (!cancelled) {
+                                Toast.makeText(
+                                    context,
+                                    "缓存完成：成功 $successCount 个，失败 $failedCount 个",
+                                    Toast.LENGTH_LONG,
+                                ).show()
                             }
                         }
                     },
