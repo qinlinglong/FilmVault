@@ -458,8 +458,7 @@ fun PlayerScreen(
         AndroidView(
             modifier = Modifier.fillMaxSize(),
             factory = { ctx ->
-                (android.view.LayoutInflater.from(ctx)
-                    .inflate(com.filmvault.app.R.layout.player_view_texture, null, false) as PlayerView).apply {
+                PlayerView(ctx).apply {
                     layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
                     this.player = player
                     // 控制器完全由下面的 Compose 面板统一绘制，避免默认控制栏与自定义
