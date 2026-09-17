@@ -174,6 +174,25 @@ object OfflineMediaStore {
         )
     }
 
+    /** 暂停未启动的排队任务，保留已获取的直链供继续下载时刷新。 */
+    fun markPaused(context: Context, cacheKey: String) {
+        val entry = list(context).firstOrNull { it.cacheKey == cacheKey } ?: return
+        if (entry.completed || isActive(cacheKey)) return
+        writeMetadata(
+            context,
+            entry.sourceUrl,
+            entry.referer,
+            entry.cacheKey,
+            entry.detailRoute,
+            entry.label,
+            entry.posterUrl,
+            complete = false,
+            state = "paused",
+            downloaded = entry.bytes,
+            total = entry.total,
+        )
+    }
+
     fun cachedUri(context: Context, sourceUrl: String, cacheKey: String = ""): Uri? = cachedFile(context, sourceUrl, cacheKey)?.let(Uri::fromFile)
     fun isCached(context: Context, cacheKey: String): Boolean = cachedFile(context, "", cacheKey) != null
 

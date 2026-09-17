@@ -46,6 +46,10 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.Job
 
 @Composable
 fun CacheScreen(nav: NavController) {
@@ -54,16 +58,11 @@ fun CacheScreen(nav: NavController) {
     var expandedGroups by remember { mutableStateOf(setOf<String>()) }
     val history by AppModule.repository.history.collectAsState(initial = emptyList())
     val scope = rememberCoroutineScope()
+    var allJob by remember { mutableStateOf<Job?>(null) }
     suspend fun refresh() { entries = withContext(Dispatchers.IO) { OfflineMediaStore.list(context) } }
-    fun startDownload(entry: OfflineMediaStore.CacheEntry) {
-        if (OfflineMediaStore.isActive(entry.cacheKey)) return
-        if (entry.sourceUrl.isBlank()) {
-            Toast.makeText(context, "请到详情页重新缓存该资源", Toast.LENGTH_SHORT).show()
-            return
-        }
-        scope.launch {
-            // 播放直链可能带短时效签名；缓存管理重试时按持久化的线路/集数重新获取。
-            val freshUrl = if (entry.sourceUrl.isNotBlank()) {
+    suspend fun downloadEntry(entry: OfflineMediaStore.CacheEntry) {
+        // 播放直链可能带短时效签名；缓存管理重试时按持久化的线路/集数重新获取。
+        val freshUrl = if (entry.sourceUrl.isNotBlank()) {
                 val parts = entry.cacheKey.split('/')
                 val lineId = parts.getOrNull(3).orEmpty()
                 val episode = parts.getOrNull(4)?.toIntOrNull()
@@ -79,18 +78,22 @@ fun CacheScreen(nav: NavController) {
                         }
                         ?: entry.sourceUrl
                 } else entry.sourceUrl
-            } else entry.sourceUrl
-            runCatching {
-                OfflineMediaStore.download(
-                    context,
-                    freshUrl,
-                    entry.referer,
-                    entry.label,
-                    entry.cacheKey,
-                    entry.detailRoute,
-                    entry.posterUrl,
-                )
-            }.onFailure {
+        } else entry.sourceUrl
+        check(freshUrl.isNotBlank()) { "请到详情页重新缓存该资源" }
+        OfflineMediaStore.download(
+            context,
+            freshUrl,
+            entry.referer,
+            entry.label,
+            entry.cacheKey,
+            entry.detailRoute,
+            entry.posterUrl,
+        )
+    }
+    fun startDownload(entry: OfflineMediaStore.CacheEntry) {
+        if (OfflineMediaStore.isActive(entry.cacheKey)) return
+        scope.launch {
+            runCatching { downloadEntry(entry) }.onFailure {
                 Toast.makeText(context, "下载失败：${it.message ?: "网络错误"}", Toast.LENGTH_LONG).show()
             }
             refresh()
@@ -116,6 +119,46 @@ fun CacheScreen(nav: NavController) {
                     Text("缓存管理", style = MaterialTheme.typography.titleLarge)
                     Text("${formatBytes(entries.sumOf { it.bytes })} · ${entries.size} 个资源", style = MaterialTheme.typography.bodySmall)
                 }
+                IconButton(
+                    onClick = {
+                        if (allJob?.isActive == true) return@IconButton
+                        allJob = scope.launch {
+                            try {
+                                val pending = OfflineMediaStore.list(context)
+                                    .filter { !it.completed && it.sourceUrl.isNotBlank() && !OfflineMediaStore.isActive(it.cacheKey) }
+                                pending.chunked(3).forEach { batch ->
+                                    coroutineScope {
+                                        batch.map { entry -> async { runCatching { downloadEntry(entry) } } }.awaitAll()
+                                    }
+                                    refresh()
+                                }
+                            } catch (_: kotlinx.coroutines.CancellationException) {
+                                // 全部暂停时主动取消调度，不弹出失败提示。
+                            } finally {
+                                allJob = null
+                                refresh()
+                            }
+                        }
+                    },
+                    enabled = allJob?.isActive != true,
+                ) { Icon(Icons.Filled.PlayArrow, contentDescription = "全部开始下载") }
+                IconButton(
+                    onClick = {
+                        allJob?.cancel()
+                        scope.launch {
+                            val current = OfflineMediaStore.list(context)
+                            coroutineScope {
+                                current.filter { !it.completed && OfflineMediaStore.isActive(it.cacheKey) }
+                                    .map { entry -> async { OfflineMediaStore.pause(entry.cacheKey) } }
+                                    .awaitAll()
+                            }
+                            current.filter { !it.completed && !OfflineMediaStore.isActive(it.cacheKey) }
+                                .forEach { OfflineMediaStore.markPaused(context, it.cacheKey) }
+                            refresh()
+                        }
+                    },
+                    enabled = entries.any { !it.completed },
+                ) { Icon(Icons.Filled.Pause, contentDescription = "全部暂停下载") }
             }
         }
         if (entries.isEmpty()) {
