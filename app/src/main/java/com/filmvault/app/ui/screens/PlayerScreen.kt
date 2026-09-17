@@ -221,6 +221,9 @@ fun PlayerScreen(
         activity?.window?.attributes?.softInputMode
             ?: android.view.WindowManager.LayoutParams.SOFT_INPUT_ADJUST_UNSPECIFIED
     }
+    val previousScreenBrightness = remember {
+        activity?.window?.attributes?.screenBrightness ?: android.view.WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
+    }
     val player = remember {
         ExoPlayer.Builder(context).setTrackSelector(trackSelector).build().apply {
             val playbackUri = OfflineMediaStore.cachedUri(context, url, cacheKey)?.toString() ?: url
@@ -404,6 +407,9 @@ fun PlayerScreen(
             window?.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
             if (window != null) {
                 window.setSoftInputMode(previousSoftInputMode)
+                // 播放器内的亮度手势只作用于当前播放器会话，退出时恢复进入前的值，
+                // 避免视频层看起来发灰，并避免亮度状态泄漏到详情页/下一次播放。
+                window.attributes = window.attributes.apply { screenBrightness = previousScreenBrightness }
                 WindowCompat.setDecorFitsSystemWindows(window, false)
                 window.statusBarColor = android.graphics.Color.TRANSPARENT
                 window.navigationBarColor = android.graphics.Color.TRANSPARENT
@@ -419,6 +425,7 @@ fun PlayerScreen(
         WindowCompat.getInsetsController(window, view).show(WindowInsetsCompat.Type.systemBars())
         activity?.requestedOrientation = previousOrientation
         window.setSoftInputMode(previousSoftInputMode)
+        window.attributes = window.attributes.apply { screenBrightness = previousScreenBrightness }
     }
 
     fun exitPlayer() {
@@ -451,7 +458,8 @@ fun PlayerScreen(
         AndroidView(
             modifier = Modifier.fillMaxSize(),
             factory = { ctx ->
-                PlayerView(ctx).apply {
+                (android.view.LayoutInflater.from(ctx)
+                    .inflate(com.filmvault.app.R.layout.player_view_texture, null, false) as PlayerView).apply {
                     layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
                     this.player = player
                     // 控制器完全由下面的 Compose 面板统一绘制，避免默认控制栏与自定义
