@@ -118,6 +118,32 @@ private data class PlayerTrackOption(
     val selected: Boolean,
 )
 
+/**
+ * 识别可能在部分设备上出现色彩偏灰/偏色的视频轨道。
+ * 不按厂商判断，完全依据流本身声明的色彩元数据选择轨道。
+ */
+private fun isNonSdrVideoTrack(format: androidx.media3.common.Format): Boolean {
+    val colorInfo = format.colorInfo ?: return false
+    return androidx.media3.common.ColorInfo.isTransferHdr(colorInfo) ||
+        colorInfo.colorSpace == C.COLOR_SPACE_BT2020 ||
+        colorInfo.colorRange == C.COLOR_RANGE_FULL
+}
+
+private data class VideoTrackCandidate(
+    val group: Tracks.Group,
+    val index: Int,
+    val format: androidx.media3.common.Format,
+)
+
+private fun videoTrackCandidates(tracks: Tracks): List<VideoTrackCandidate> =
+    tracks.groups
+        .filter { it.type == C.TRACK_TYPE_VIDEO && it.isSupported() }
+        .flatMap { group ->
+            (0 until group.length).map { index ->
+                VideoTrackCandidate(group, index, group.getTrackFormat(index))
+            }
+        }
+
 private fun trackOptions(tracks: Tracks, type: Int): List<PlayerTrackOption> =
     tracks.groups.filter { it.type == type }.flatMap { group ->
         (0 until group.length).map { index ->
@@ -196,6 +222,7 @@ fun PlayerScreen(
     var playlistExpanded by remember { mutableStateOf(false) }
     var speedMenuExpanded by remember { mutableStateOf(false) }
     var trackMenuType by remember { mutableStateOf<Int?>(null) }
+    var automaticSdrFallbackApplied by remember { mutableStateOf(false) }
     var playbackSpeed by remember { mutableStateOf(1f) }
     var switchingEpisode by remember { mutableStateOf(false) }
     var exiting by remember { mutableStateOf(false) }
@@ -252,6 +279,7 @@ fun PlayerScreen(
     fun switchEpisode(episode: Int) {
         if (switchingEpisodeState || episode !in 1..episodeTotal || lineId.isBlank()) return
         switchingEpisode = true
+        automaticSdrFallbackApplied = false
         playerScope.launch {
             try {
                 val nextUrl = AppModule.repository.resolvePlayUrl(lineId, episode)
@@ -304,7 +332,24 @@ fun PlayerScreen(
 
     DisposableEffect(player) {
         val listener = object : androidx.media3.common.Player.Listener {
-            override fun onTracksChanged(value: Tracks) { tracks = value }
+            override fun onTracksChanged(value: Tracks) {
+                tracks = value
+
+                // 当线路同时提供 HDR/BT.2020/Full Range 与 SDR 轨道时，优先选择
+                // SDR 轨道。这样由视频源元数据决定，不依赖小米、华为等机型判断。
+                if (!automaticSdrFallbackApplied) {
+                    val candidates = videoTrackCandidates(value)
+                    val selected = candidates.firstOrNull { it.group.isTrackSelected(it.index) }
+                    val sdr = candidates.firstOrNull { !isNonSdrVideoTrack(it.format) }
+                    if (selected != null && isNonSdrVideoTrack(selected.format) && sdr != null) {
+                        player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
+                            .setTrackTypeDisabled(C.TRACK_TYPE_VIDEO, false)
+                            .setOverrideForType(TrackSelectionOverride(sdr.group.getMediaTrackGroup(), sdr.index))
+                            .build()
+                        automaticSdrFallbackApplied = true
+                    }
+                }
+            }
             override fun onIsPlayingChanged(value: Boolean) { isPlaying = value }
             override fun onPlaybackStateChanged(state: Int) {
                 if (state == androidx.media3.common.Player.STATE_ENDED && currentEpisodeState < episodeTotal && lineId.isNotBlank()) {
