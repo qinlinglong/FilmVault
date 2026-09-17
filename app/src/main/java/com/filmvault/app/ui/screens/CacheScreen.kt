@@ -81,7 +81,8 @@ fun CacheScreen(nav: NavController) {
     LaunchedEffect(Unit) {
         while (true) {
             refresh()
-            delay(500)
+            // metadata 已按下载进度持久化，降低频繁递归扫描缓存目录造成的 IO 和卡顿。
+            delay(1000)
         }
     }
     val groups = entries.groupBy { it.label.substringBefore(" · ").ifBlank { "未命名资源" } }
@@ -95,7 +96,7 @@ fun CacheScreen(nav: NavController) {
                 IconButton(onClick = { nav.popBackStack() }) { Icon(Icons.Filled.ArrowBack, contentDescription = "返回") }
                 Column(Modifier.weight(1f)) {
                     Text("缓存管理", style = MaterialTheme.typography.titleLarge)
-                    Text("${formatBytes(OfflineMediaStore.cacheSize(context))} · ${entries.size} 个资源", style = MaterialTheme.typography.bodySmall)
+                    Text("${formatBytes(entries.sumOf { it.bytes })} · ${entries.size} 个资源", style = MaterialTheme.typography.bodySmall)
                 }
             }
         }
@@ -195,8 +196,10 @@ fun CacheScreen(nav: NavController) {
                                     if (!entry.completed) {
                                         IconButton(onClick = {
                                             if (OfflineMediaStore.isActive(entry.cacheKey)) {
-                                                OfflineMediaStore.pause(entry.cacheKey)
-                                                scope.launch { refresh() }
+                                                scope.launch {
+                                                    OfflineMediaStore.pause(entry.cacheKey)
+                                                    refresh()
+                                                }
                                             } else {
                                                 startDownload(entry)
                                             }
@@ -208,8 +211,10 @@ fun CacheScreen(nav: NavController) {
                                         }
                                     }
                                     IconButton(onClick = {
-                                        OfflineMediaStore.delete(entry)
-                                        scope.launch { refresh() }
+                                        scope.launch {
+                                            OfflineMediaStore.delete(entry)
+                                            refresh()
+                                        }
                                     }) { Icon(Icons.Filled.Delete, contentDescription = "删除缓存") }
                                 }
                             }

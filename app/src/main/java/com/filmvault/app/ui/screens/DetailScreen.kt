@@ -120,13 +120,22 @@ fun DetailScreen(nav: NavController, dir: String, id: String, localOnly: Boolean
         cacheProgress = 0f
         cacheDownloaded = 0L
         cacheTotal = 0L
+        liveProgress.remove(resourceCacheKey(line, episode))
         cacheStatusText = "正在解析并缓存：${meta?.title.orEmpty()} 第${episode}集"
         Toast.makeText(context, cacheStatusText, Toast.LENGTH_SHORT).show()
         pausedEpisode = line to episode
         cacheJob = scope.launch {
             try {
-                val directUrl = AppModule.repository.resolvePlayUrl(line.id, episode) ?: error("未解析到播放地址")
                 val key = resourceCacheKey(line, episode)
+                OfflineMediaStore.enqueue(
+                    context,
+                    "${meta?.title.orEmpty()} · ${line.name} · 第${episode}集",
+                    key,
+                    "detail/$dir/$id",
+                    "${AppModule.siteSettings.siteUrlNow}/py/${line.id}/$episode",
+                    meta?.posterUrl,
+                )
+                val directUrl = AppModule.repository.resolvePlayUrl(line.id, episode) ?: error("未解析到播放地址")
                 OfflineMediaStore.download(
                     context,
                     directUrl,
@@ -149,6 +158,7 @@ fun DetailScreen(nav: NavController, dir: String, id: String, localOnly: Boolean
             } catch (_: CancellationException) {
                 cacheStatusText = "已暂停，可继续缓存第${episode}集"
             } catch (error: Throwable) {
+                OfflineMediaStore.markFailed(context, resourceCacheKey(line, episode))
                 cacheStatusText = "缓存失败：${error.message ?: "网络错误"}"
                 Toast.makeText(context, cacheStatusText, Toast.LENGTH_LONG).show()
             } finally {
@@ -193,6 +203,7 @@ fun DetailScreen(nav: NavController, dir: String, id: String, localOnly: Boolean
                             cacheProgress = 0f
                             cacheDownloaded = 0L
                             cacheTotal = 0L
+                            liveProgress.clear()
                             cacheStatusText = "正在解析并缓存 ${selected.size} 个资源…"
                             Toast.makeText(context, cacheStatusText, Toast.LENGTH_SHORT).show()
                             cacheJob = scope.launch {
