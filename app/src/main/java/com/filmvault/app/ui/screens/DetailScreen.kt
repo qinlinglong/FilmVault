@@ -224,53 +224,48 @@ fun DetailScreen(nav: NavController, dir: String, id: String, localOnly: Boolean
                                             meta?.posterUrl,
                                         )
                                     }
-                                    // 按批处理：每批先解析、再立即下载，避免提前解析的短时效直链
-                                    // 在前一批下载完成前过期。解析串行执行，下载最多 3 路并行。
+                                    // 先预取所有勾选资源的直链并写入任务；直链仅作为临时值，
+                                    // 下载失败时会用线路和集数重新解析，兼容短时效签名地址。
                                     val results = mutableListOf<Boolean>()
-                                    tasks.chunked(3).forEachIndexed { batchIndex, batch ->
-                                        val resolvedBatch = mutableListOf<Triple<com.filmvault.app.data.model.PlayLine, Int, String>>()
-                                        batch.forEachIndexed { batchTaskIndex, (line, episode) ->
-                                            var directUrl: String? = null
-                                            var attempt = 0
-                                            val taskIndex = batchIndex * 3 + batchTaskIndex
-                                            while (directUrl == null && attempt < 3) {
-                                                try {
-                                                    cacheStatusText = "正在解析第 ${batchIndex + 1} 批地址 ${taskIndex + 1}/${tasks.size}：${meta?.title.orEmpty()} 第${episode}集"
-                                                    directUrl = AppModule.repository.resolvePlayUrl(line.id, episode)
-                                                        ?: error("未解析到播放地址")
-                                                } catch (error: CancellationException) {
-                                                    throw error
-                                                } catch (_: Throwable) {
-                                                    attempt++
-                                                    if (attempt < 3) delay(attempt * 800L)
-                                                }
-                                            }
-                                            if (directUrl != null) {
-                                                val referer = "${AppModule.siteSettings.siteUrlNow}/py/${line.id}/$episode"
-                                                OfflineMediaStore.updateQueuedSource(
-                                                    context,
-                                                    resourceCacheKey(line, episode),
-                                                    directUrl,
-                                                    referer,
-                                                )
-                                                resolvedBatch += Triple(line, episode, directUrl)
-                                            } else {
-                                                OfflineMediaStore.markFailed(context, resourceCacheKey(line, episode))
-                                                results += false
+                                    val preparedTasks = mutableListOf<Triple<com.filmvault.app.data.model.PlayLine, Int, String>>()
+                                    tasks.forEachIndexed { taskIndex, (line, episode) ->
+                                        var directUrl: String? = null
+                                        var attempt = 0
+                                        while (directUrl == null && attempt < 3) {
+                                            try {
+                                                cacheStatusText = "正在预取资源地址 ${taskIndex + 1}/${tasks.size}：${meta?.title.orEmpty()} 第${episode}集"
+                                                directUrl = AppModule.repository.resolvePlayUrl(line.id, episode)
+                                                    ?: error("未解析到播放地址")
+                                            } catch (error: CancellationException) {
+                                                throw error
+                                            } catch (_: Throwable) {
+                                                attempt++
+                                                if (attempt < 3) delay(attempt * 800L)
                                             }
                                         }
+                                        if (directUrl != null) {
+                                            val referer = "${AppModule.siteSettings.siteUrlNow}/py/${line.id}/$episode"
+                                            OfflineMediaStore.updateQueuedSource(context, resourceCacheKey(line, episode), directUrl, referer)
+                                            preparedTasks += Triple(line, episode, directUrl)
+                                        } else {
+                                            OfflineMediaStore.markFailed(context, resourceCacheKey(line, episode))
+                                            results += false
+                                        }
+                                    }
 
+                                    preparedTasks.chunked(3).forEachIndexed { batchIndex, batch ->
                                         val batchResults = coroutineScope {
-                                            resolvedBatch.mapIndexed { resolvedIndex, (line, episode, directUrl) ->
+                                            batch.mapIndexed { batchIndexInBatch, (line, episode, preparedUrl) ->
                                                 async {
                                                     var success = false
                                                     var attempt = 0
+                                                    var directUrl = preparedUrl
                                                     while (!success && attempt < 3) {
                                                         try {
                                                             val referer = "${AppModule.siteSettings.siteUrlNow}/py/${line.id}/$episode"
                                                             pausedEpisode = line to episode
-                                                            val taskIndex = batchIndex * 3 + resolvedIndex
-                                                            cacheStatusText = "正在缓存（第 ${batchIndex + 1} 批 / 共 ${((tasks.size + 2) / 3)} 批）${taskIndex + 1}/${tasks.size}：${meta?.title.orEmpty()} 第${episode}集"
+                                                            val taskIndex = batchIndex * 3 + batchIndexInBatch
+                                                            cacheStatusText = "正在缓存（第 ${batchIndex + 1} 批 / 共 ${((preparedTasks.size + 2) / 3)} 批）${taskIndex + 1}/${preparedTasks.size}：${meta?.title.orEmpty()} 第${episode}集"
                                                             OfflineMediaStore.download(
                                                                 context,
                                                                 directUrl,
@@ -291,7 +286,18 @@ fun DetailScreen(nav: NavController, dir: String, id: String, localOnly: Boolean
                                                             throw error
                                                         } catch (_: Throwable) {
                                                             attempt++
-                                                            if (attempt < 3) delay(attempt * 800L)
+                                                            if (attempt < 3) {
+                                                                delay(attempt * 800L)
+                                                                directUrl = runCatching {
+                                                                    AppModule.repository.resolvePlayUrl(line.id, episode)
+                                                                }.getOrNull().orEmpty()
+                                                                OfflineMediaStore.updateQueuedSource(
+                                                                    context,
+                                                                    resourceCacheKey(line, episode),
+                                                                    directUrl,
+                                                                    "${AppModule.siteSettings.siteUrlNow}/py/${line.id}/$episode",
+                                                                )
+                                                            }
                                                         }
                                                     }
                                                     if (!success) OfflineMediaStore.markFailed(context, resourceCacheKey(line, episode))

@@ -62,10 +62,28 @@ fun CacheScreen(nav: NavController) {
             return
         }
         scope.launch {
+            // 播放直链可能带短时效签名；缓存管理重试时按持久化的线路/集数重新获取。
+            val freshUrl = if (entry.sourceUrl.isNotBlank()) {
+                val parts = entry.cacheKey.split('/')
+                val lineId = parts.getOrNull(3).orEmpty()
+                val episode = parts.getOrNull(4)?.toIntOrNull()
+                if (parts.getOrNull(0) == "play" && lineId.isNotBlank() && episode != null) {
+                    runCatching { AppModule.repository.resolvePlayUrl(lineId, episode) }.getOrNull()
+                        ?.also {
+                            OfflineMediaStore.updateQueuedSource(
+                                context,
+                                entry.cacheKey,
+                                it,
+                                "${AppModule.siteSettings.siteUrlNow}/py/$lineId/$episode",
+                            )
+                        }
+                        ?: entry.sourceUrl
+                } else entry.sourceUrl
+            } else entry.sourceUrl
             runCatching {
                 OfflineMediaStore.download(
                     context,
-                    entry.sourceUrl,
+                    freshUrl,
                     entry.referer,
                     entry.label,
                     entry.cacheKey,
