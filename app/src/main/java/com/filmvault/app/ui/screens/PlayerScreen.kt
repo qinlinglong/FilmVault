@@ -5,7 +5,10 @@ package com.filmvault.app.ui.screens
 import android.view.ViewGroup
 import android.view.MotionEvent
 import android.content.pm.ActivityInfo
+import android.content.Intent
 import android.media.AudioManager
+import android.content.res.Configuration
+import android.provider.Settings
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -19,6 +22,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -39,11 +44,19 @@ import androidx.compose.material.icons.filled.Subtitles
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Cast
+import androidx.compose.material.icons.filled.ScreenShare
 import androidx.compose.material.icons.filled.PlaylistPlay
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.DownloadDone
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -91,6 +104,8 @@ import androidx.media3.ui.PlayerView
 import androidx.navigation.NavController
 import com.filmvault.app.di.AppModule
 import com.filmvault.app.util.OfflineMediaStore
+import com.filmvault.app.util.DlnaCastClient
+import com.filmvault.app.util.DlnaRenderer
 import android.widget.Toast
 
 private enum class DownloadStatus { IDLE, DOWNLOADING, DOWNLOADED, FAILED }
@@ -110,6 +125,10 @@ private fun applyPlayerImmersiveMode(activity: android.app.Activity?, view: andr
         android.view.View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
         android.view.View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
 }
+
+private fun isTelevision(context: android.content.Context): Boolean =
+    (context.resources.configuration.uiMode and Configuration.UI_MODE_TYPE_MASK) ==
+        Configuration.UI_MODE_TYPE_TELEVISION
 
 private data class PlayerTrackOption(
     val group: TrackGroup,
@@ -215,6 +234,7 @@ fun PlayerScreen(
     var scrubbing by remember { mutableStateOf(false) }
     val gestureScope = rememberCoroutineScope()
     val activity = context as? android.app.Activity
+    val isTv = remember(context) { isTelevision(context) }
     val audioManager = remember { context.getSystemService(AudioManager::class.java) }
     val trackSelector = remember { DefaultTrackSelector(context) }
     var tracks by remember { mutableStateOf(Tracks.EMPTY) }
@@ -227,6 +247,14 @@ fun PlayerScreen(
     var switchingEpisode by remember { mutableStateOf(false) }
     var exiting by remember { mutableStateOf(false) }
     var activeSourceUrl by remember { mutableStateOf(url) }
+    var castDialogVisible by remember { mutableStateOf(false) }
+    var castLoading by remember { mutableStateOf(false) }
+    var castConnecting by remember { mutableStateOf(false) }
+    var castDevices by remember { mutableStateOf<List<DlnaRenderer>>(emptyList()) }
+    var castRenderer by remember { mutableStateOf<DlnaRenderer?>(null) }
+    var castError by remember { mutableStateOf<String?>(null) }
+    var castSearchJob by remember { mutableStateOf<Job?>(null) }
+    var castSearchGeneration by remember { mutableStateOf(0) }
     var downloadStatus by remember {
         mutableStateOf(
             if (OfflineMediaStore.cachedUri(context, url, cacheKey) != null) DownloadStatus.DOWNLOADED else DownloadStatus.IDLE,
@@ -330,6 +358,84 @@ fun PlayerScreen(
         }
     }
 
+    fun openCastDialog() {
+        castSearchJob?.cancel()
+        castSearchGeneration += 1
+        val searchGeneration = castSearchGeneration
+        castDialogVisible = true
+        castLoading = true
+        castConnecting = false
+        castError = null
+        castSearchJob = playerScope.launch {
+            try {
+                val devices = DlnaCastClient.discover(context)
+                if (searchGeneration == castSearchGeneration) {
+                    castDevices = devices
+                    if (devices.isEmpty()) castError = "未发现电视盒子，请确认手机和盒子在同一 Wi-Fi"
+                }
+            } catch (_: kotlinx.coroutines.CancellationException) {
+                // 用户取消搜索时直接关闭弹窗，不显示失败提示。
+            } catch (error: Throwable) {
+                if (searchGeneration == castSearchGeneration) {
+                    castError = error.message ?: "搜索投屏设备失败"
+                }
+            } finally {
+                if (searchGeneration == castSearchGeneration) {
+                    castLoading = false
+                    castSearchJob = null
+                }
+            }
+        }
+    }
+
+    fun dismissCastDialog() {
+        castSearchGeneration += 1
+        castSearchJob?.cancel()
+        castSearchJob = null
+        castLoading = false
+        castConnecting = false
+        castDialogVisible = false
+    }
+
+    fun openSystemScreenCast() {
+        dismissCastDialog()
+        val castSettings = Intent(Settings.ACTION_CAST_SETTINGS).apply {
+            if (context !is android.app.Activity) addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        runCatching { context.startActivity(castSettings) }
+            .recoverCatching {
+                context.startActivity(Intent(Settings.ACTION_WIRELESS_SETTINGS).apply {
+                    if (context !is android.app.Activity) addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                })
+            }
+            .onFailure {
+                Toast.makeText(context, "当前手机没有可用的系统无线投屏入口", Toast.LENGTH_LONG).show()
+            }
+    }
+
+    fun castTo(renderer: DlnaRenderer) {
+        castLoading = true
+        castConnecting = true
+        castError = null
+        playerScope.launch {
+            try {
+                check(activeSourceUrl.startsWith("http://") || activeSourceUrl.startsWith("https://")) {
+                    "当前资源不是可投屏的网络直链"
+                }
+                DlnaCastClient.play(renderer, activeSourceUrl, resourceTitle.ifBlank { "FilmVault" })
+                castRenderer = renderer
+                castDialogVisible = false
+                player.pause()
+                Toast.makeText(context, "已投到 ${renderer.name}", Toast.LENGTH_SHORT).show()
+            } catch (error: Throwable) {
+                castError = "投屏失败：${error.message ?: "盒子不支持该资源"}"
+            } finally {
+                castLoading = false
+                castConnecting = false
+            }
+        }
+    }
+
     DisposableEffect(player) {
         val listener = object : androidx.media3.common.Player.Listener {
             override fun onTracksChanged(value: Tracks) {
@@ -425,6 +531,14 @@ fun PlayerScreen(
     DisposableEffect(view) {
         val window = (view.context as? android.app.Activity)?.window
         val controller = window?.let { WindowCompat.getInsetsController(it, view) }
+        val reapplyImmersive = {
+            // TV 系统和部分定制 ROM 会在获取焦点、旋转或弹出键盘后重新显示系统栏。
+            // 每次窗口重新获得焦点时再次隐藏，避免播放器顶部常驻状态栏。
+            if (!exiting) applyPlayerImmersiveMode(activity, view)
+        }
+        val systemUiListener = android.view.View.OnSystemUiVisibilityChangeListener {
+            reapplyImmersive()
+        }
         if (window != null) {
             WindowCompat.setDecorFitsSystemWindows(window, false)
             window.statusBarColor = android.graphics.Color.TRANSPARENT
@@ -441,11 +555,19 @@ fun PlayerScreen(
         applyPlayerImmersiveMode(activity, view)
         // 华为设备在弹出工具菜单时可能重新派发系统栏 Insets。播放器不使用这些
         // Insets 做布局，因此直接消费，确保底部控制面板仍锚定在同一窗口坐标。
-        ViewCompat.setOnApplyWindowInsetsListener(view) { _, _ -> WindowInsetsCompat.CONSUMED }
+        ViewCompat.setOnApplyWindowInsetsListener(view) { _, _ ->
+            reapplyImmersive()
+            WindowInsetsCompat.CONSUMED
+        }
+        // 比单纯监听 PlayerView 焦点更可靠：系统栏被遥控器、触摸或 ROM 主动拉回时，
+        // 这里都能重新进入沉浸模式。
+        window?.decorView?.setOnSystemUiVisibilityChangeListener(systemUiListener)
         view.requestApplyInsets()
-        activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+        // TV 通常已经是横屏，强制 SENSOR_LANDSCAPE 可能触发黑屏重建；交给 TV 系统保持当前方向。
+        if (!isTv) activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
         onDispose {
             ViewCompat.setOnApplyWindowInsetsListener(view, null)
+            window?.decorView?.setOnSystemUiVisibilityChangeListener(null)
             controller?.show(WindowInsetsCompat.Type.systemBars())
             // 恢复进入播放器前的方向，避免手机/平板返回时因方向重建出现空白页。
             activity?.requestedOrientation = previousOrientation
@@ -465,10 +587,8 @@ fun PlayerScreen(
 
     fun preparePlayerExit() {
         val window = activity?.window ?: return
-        // 先恢复播放器进入前的系统栏和方向，再切回详情页，避免详情页先按横屏
-        // Insets 绘制一帧后才旋转回去，造成返回时的上下抖动。
-        WindowCompat.getInsetsController(window, view).show(WindowInsetsCompat.Type.systemBars())
-        activity?.requestedOrientation = previousOrientation
+        // 退出时只恢复窗口参数；系统栏和方向交给 DisposableEffect 的清理阶段处理。
+        // 这样导航不会在播放器仍然占用 Surface 时触发一次额外的方向重建，避免返回黑屏。
         window.setSoftInputMode(previousSoftInputMode)
         window.attributes = window.attributes.apply { screenBrightness = previousScreenBrightness }
     }
@@ -689,6 +809,13 @@ fun PlayerScreen(
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f),
                 )
+                IconButton(onClick = { openCastDialog() }) {
+                    Icon(
+                        Icons.Default.Cast,
+                        contentDescription = if (castRenderer == null) "投屏" else "已投屏到 ${castRenderer?.name}",
+                        tint = if (castRenderer == null) Color.White else Color(0xFF8FD694),
+                    )
+                }
             }
         }
         if (!locked && controlsVisible) {
@@ -814,10 +941,17 @@ fun PlayerScreen(
                     }
                         IconButton(
                             onClick = {
-                                fullscreen = !fullscreen
-                                activity?.requestedOrientation = if (fullscreen) ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE else ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
-                                val controller = activity?.let { WindowCompat.getInsetsController(it.window, view) }
-                                if (fullscreen) controller?.hide(WindowInsetsCompat.Type.systemBars()) else controller?.show(WindowInsetsCompat.Type.systemBars())
+                                if (isTv) {
+                                    // TV 没有可靠的“退出全屏”窗口形态，始终保持沉浸播放。
+                                    fullscreen = true
+                                    applyPlayerImmersiveMode(activity, view)
+                                } else {
+                                    fullscreen = !fullscreen
+                                    activity?.requestedOrientation = if (fullscreen) ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE else ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+                                    val controller = activity?.let { WindowCompat.getInsetsController(it.window, view) }
+                                    if (fullscreen) applyPlayerImmersiveMode(activity, view)
+                                    else controller?.show(WindowInsetsCompat.Type.systemBars())
+                                }
                             },
                         ) {
                             Icon(if (fullscreen) Icons.Default.FullscreenExit else Icons.Default.Fullscreen, contentDescription = if (fullscreen) "退出全屏" else "全屏", tint = Color.White)
@@ -969,6 +1103,86 @@ fun PlayerScreen(
                 )
                 Text(hint, color = Color.White, modifier = Modifier.padding(start = 8.dp))
             }
+        }
+        if (castDialogVisible) {
+            AlertDialog(
+                onDismissRequest = { dismissCastDialog() },
+                title = { Text("选择投屏方式") },
+                text = {
+                    Column(
+                        modifier = Modifier.heightIn(max = 380.dp).verticalScroll(rememberScrollState()),
+                    ) {
+                        Text("视频推送", fontWeight = FontWeight.SemiBold)
+                        Text(
+                            "电视独立播放视频，手机可以继续做其他操作。",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontSize = 13.sp,
+                            modifier = Modifier.padding(top = 3.dp),
+                        )
+                        if (castLoading) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(vertical = 18.dp),
+                                horizontalArrangement = Arrangement.Center,
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                CircularProgressIndicator(modifier = Modifier.size(22.dp), strokeWidth = 2.dp)
+                                Text(
+                                    if (castConnecting) "正在连接投屏设备…" else "正在搜索局域网设备…",
+                                    modifier = Modifier.padding(start = 10.dp),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        } else if (castDevices.isNotEmpty()) {
+                            Text(
+                                "发现 ${castDevices.size} 台设备",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontSize = 13.sp,
+                                modifier = Modifier.padding(top = 12.dp, bottom = 4.dp),
+                            )
+                            castDevices.forEach { renderer ->
+                                TextButton(
+                                    onClick = { castTo(renderer) },
+                                    modifier = Modifier.fillMaxWidth(),
+                                ) {
+                                    Icon(Icons.Default.Cast, contentDescription = null, modifier = Modifier.size(20.dp))
+                                    Spacer(Modifier.width(8.dp))
+                                    Text(renderer.name, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                }
+                            }
+                        }
+                        castError?.let {
+                            Text(
+                                it,
+                                color = MaterialTheme.colorScheme.error,
+                                fontSize = 13.sp,
+                                modifier = Modifier.padding(top = 8.dp),
+                            )
+                        }
+                        HorizontalDivider(modifier = Modifier.padding(vertical = 14.dp))
+                        Text("屏幕镜像", fontWeight = FontWeight.SemiBold)
+                        Text(
+                            "把整个手机画面同步到投影，适合极米等支持 Miracast 的设备。",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontSize = 13.sp,
+                            modifier = Modifier.padding(top = 3.dp, bottom = 10.dp),
+                        )
+                        FilledTonalButton(
+                            onClick = { openSystemScreenCast() },
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Icon(Icons.Default.ScreenShare, contentDescription = null, modifier = Modifier.size(20.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("打开系统无线投屏")
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = { openCastDialog() }, enabled = !castLoading) { Text("重新搜索") }
+                },
+                dismissButton = {
+                    TextButton(onClick = { dismissCastDialog() }) { Text("取消") }
+                },
+            )
         }
     }
 }

@@ -5,6 +5,12 @@ PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 KEYSTORE_PATH="$(security find-generic-password -a "$USER" -s FilmVaultReleaseKeystore -w)"
 SIGNING_PASSWORD="$(security find-generic-password -a "$USER" -s FilmVaultReleaseSigning -w)"
 
+# Keep build caches under the local Documents directory.
+export GRADLE_USER_HOME="${GRADLE_USER_HOME:-/storage/Users/currentUser/Documents/.gradle}"
+export MAVEN_USER_HOME="${MAVEN_USER_HOME:-/storage/Users/currentUser/Documents/.m2}"
+export MAVEN_OPTS="${MAVEN_OPTS:-} -Dmaven.repo.local=/storage/Users/currentUser/Documents/.m2/repository"
+mkdir -p "$GRADLE_USER_HOME" "$MAVEN_USER_HOME/repository"
+
 if [[ ! -f "$KEYSTORE_PATH" ]]; then
   echo "Release keystore not found: $KEYSTORE_PATH" >&2
   exit 1
